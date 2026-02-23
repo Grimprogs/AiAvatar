@@ -1,0 +1,7 @@
+{
+  "name": "DevInterview AI",
+  "description": "An AI-powered coding interviewer that watches you code in real-time and helps you solve problems using voice or text.",
+  "requestFramePermissions": [
+    "microphone"
+  ]
+}
