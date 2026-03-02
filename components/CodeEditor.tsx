@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, forwardRef, useImperativeHandle } from 'react';
-import { InterviewLanguage } from '../types';
+import type { InterviewLanguage } from '@/types';
 import { Sun, Moon } from 'lucide-react';
 
 interface CodeEditorProps {

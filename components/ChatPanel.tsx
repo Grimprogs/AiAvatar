@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Send, Sparkles, BrainCircuit, GripHorizontal } from 'lucide-react';
-import { ChatMessage } from '../types';
+import type { ChatMessage } from '@/types';
 
 interface ChatPanelProps {
   messages: ChatMessage[];
