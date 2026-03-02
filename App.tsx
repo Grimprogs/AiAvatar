@@ -1,7 +1,8 @@
-import React, { useRef } from 'react';
+import React, { useRef, useState } from 'react';
 import CodeEditor, { type CodeEditorHandle } from '@/components/CodeEditor';
 import ChatPanel from '@/components/ChatPanel';
 import LiveControls from '@/components/LiveControls';
+import AvatarInterviewer from '@/components/AvatarInterviewer';
 import { useTheme } from '@/hooks/useTheme';
 import { useLiveInterview } from '@/hooks/useLiveInterview';
 import { useInterviewSession } from '@/hooks/useInterviewSession';
@@ -16,6 +17,7 @@ const API_KEY = process.env.API_KEY || '';
  */
 const App: React.FC = () => {
   const editorRef = useRef<CodeEditorHandle>(null);
+  const [showAvatar, setShowAvatar] = useState(false);
   const { theme, toggleTheme } = useTheme();
 
   const session = useInterviewSession({ apiKey: API_KEY });
@@ -38,31 +40,39 @@ const App: React.FC = () => {
         currentProblem={session.currentProblem}
         onRandomProblem={session.handleRandomProblem}
         live={live}
+        showAvatar={showAvatar}
+        onToggleAvatar={() => setShowAvatar((v) => !v)}
       />
 
       <main className="flex-1 flex overflow-hidden">
-        <div className="flex-1 flex flex-col relative min-w-0">
-          <DescriptionBanner description={session.currentProblem.description} />
-          <div className="flex-1 relative">
-            <CodeEditor
-              ref={editorRef}
-              code={session.code}
-              onChange={session.setCode}
-              language={session.language}
-              onLanguageChange={session.handleLanguageChange}
-              theme={theme}
-              onThemeToggle={toggleTheme}
-            />
-          </div>
-        </div>
+        {showAvatar ? (
+          <AvatarInterviewer />
+        ) : (
+          <>
+            <div className="flex-1 flex flex-col relative min-w-0">
+              <DescriptionBanner description={session.currentProblem.description} />
+              <div className="flex-1 relative">
+                <CodeEditor
+                  ref={editorRef}
+                  code={session.code}
+                  onChange={session.setCode}
+                  language={session.language}
+                  onLanguageChange={session.handleLanguageChange}
+                  theme={theme}
+                  onThemeToggle={toggleTheme}
+                />
+              </div>
+            </div>
 
-        <div className="w-[400px] xl:w-[450px] flex-shrink-0 flex flex-col border-l border-subtle bg-panel z-10 shadow-2xl shadow-black/5 transition-colors duration-300">
-          <ChatPanel
-            messages={session.messages}
-            onSendMessage={session.handleSendMessage}
-            isLoading={session.isLoadingChat}
-          />
-        </div>
+            <div className="w-[400px] xl:w-[450px] flex-shrink-0 flex flex-col border-l border-subtle bg-panel z-10 shadow-2xl shadow-black/5 transition-colors duration-300">
+              <ChatPanel
+                messages={session.messages}
+                onSendMessage={session.handleSendMessage}
+                isLoading={session.isLoadingChat}
+              />
+            </div>
+          </>
+        )}
       </main>
     </div>
   );
@@ -82,9 +92,11 @@ interface HeaderProps {
     handleConnectLive: () => void;
     handleDisconnectLive: () => void;
   };
+  showAvatar: boolean;
+  onToggleAvatar: () => void;
 }
 
-function Header({ currentProblem, onRandomProblem, live }: HeaderProps) {
+function Header({ currentProblem, onRandomProblem, live, showAvatar, onToggleAvatar }: HeaderProps) {
   const difficultyClass =
     currentProblem.difficulty === 'Easy'
       ? 'border-emerald-900/50 text-emerald-500'
@@ -119,6 +131,21 @@ function Header({ currentProblem, onRandomProblem, live }: HeaderProps) {
           onDisconnect={live.handleDisconnectLive}
           volume={live.volume}
         />
+      </div>
+
+      <div className="ml-auto flex items-center pr-2">
+        <button
+          onClick={onToggleAvatar}
+          title={showAvatar ? 'Back to Code Editor' : 'Open Avatar Interviewer'}
+          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all duration-200 ${
+            showAvatar
+              ? 'bg-indigo-500/20 text-indigo-400 border border-indigo-500/40'
+              : 'text-secondary hover:text-primary hover:bg-white/5 border border-transparent'
+          }`}
+        >
+          <span className="text-base leading-none">{showAvatar ? '💻' : '🤖'}</span>
+          {showAvatar ? 'Code Editor' : 'Avatar'}
+        </button>
       </div>
     </header>
   );
