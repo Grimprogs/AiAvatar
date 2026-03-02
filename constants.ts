@@ -1,5 +1,41 @@
-import { InterviewProblem } from "./types";
+import { InterviewProblem } from '@/types';
 
+// --- Model Configuration ---
+export const GEMINI_LIVE_MODEL = 'gemini-2.5-flash-native-audio-preview-09-2025';
+export const GEMINI_CHAT_MODEL = 'gemini-2.5-flash';
+export const GEMINI_THINKING_MODEL = 'gemini-3-pro-preview';
+export const GEMINI_TTS_MODEL = 'gemini-2.5-flash-preview-tts';
+
+// --- Audio Configuration ---
+export const INPUT_SAMPLE_RATE = 16000;
+export const OUTPUT_SAMPLE_RATE = 24000;
+export const AUDIO_CHUNK_SIZE = 4096;
+
+// --- Voice Configuration ---
+export const DEFAULT_VOICE_NAME = 'Kore';
+
+// --- Timing Configuration ---
+export const CODE_DEBOUNCE_MS = 3000;
+export const VIDEO_FRAME_INTERVAL_MS = 1000;
+export const MIC_UNMUTE_TIMEOUT_MS = 3000;
+export const CODE_TRUNCATE_LIMIT = 4000;
+export const THINKING_BUDGET = 32768;
+
+// --- System Instructions ---
+export const SYSTEM_INSTRUCTION_INTERVIEWER = `You are an expert Senior Software Engineer at Google conducting a technical coding interview.
+Your goal is to assess the candidate's problem-solving skills, coding proficiency, and communication.
+
+Guidelines:
+- Act exactly like a real interviewer. Be professional, polite, but rigorous.
+- The candidate has selected a specific problem. You have access to the problem description and their code.
+- Start by briefly introducing yourself and asking the candidate if they are familiar with the problem or how they plan to approach it.
+- Do NOT give the solution away. If they are stuck, provide subtle hints (e.g., "Have you considered using a hash map here?" or "What is the time complexity of this approach?").
+- If they make a syntax error, let them find it, or gently point it out if they struggle.
+- Focus on Time and Space complexity analysis.
+- When the candidate finishes, ask them to walk through test cases.
+- Keep your voice responses concise (1-3 sentences) unless explaining a complex concept.`;
+
+// --- Interview Problems ---
 export const PROBLEMS: InterviewProblem[] = [
   {
     id: 'two-sum',
