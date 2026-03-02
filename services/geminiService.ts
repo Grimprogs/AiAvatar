@@ -1,16 +1,33 @@
-import { GoogleGenAI, Type } from "@google/genai";
-import { SYSTEM_INSTRUCTION_INTERVIEWER } from "../types";
+import { GoogleGenAI } from '@google/genai';
+import {
+  SYSTEM_INSTRUCTION_INTERVIEWER,
+  GEMINI_CHAT_MODEL,
+  GEMINI_THINKING_MODEL,
+  THINKING_BUDGET,
+} from '@/constants';
 
+/**
+ * Sends a single chat message to the Gemini API and returns the response text.
+ *
+ * Creates a fresh chat session each call (stateless wrapper). The current code
+ * is injected as context alongside the user's message so the interviewer model
+ * can reference what the candidate has written.
+ *
+ * @param apiKey         - Gemini API key
+ * @param history        - Prior conversation turns
+ * @param currentMessage - The new user message (may include a context prefix)
+ * @param currentCode    - The candidate's current editor contents
+ * @param useThinking    - When true, uses the thinking-capable model with an extended budget
+ */
 export const generateChatMessage = async (
   apiKey: string,
   history: { role: 'user' | 'model'; text: string }[],
   currentMessage: string,
   currentCode: string,
-  useThinking: boolean = false
+  useThinking: boolean = false,
 ) => {
   const ai = new GoogleGenAI({ apiKey });
-  
-  // Construct the prompt with context
+
   const fullMessage = `
 [CURRENT CODE CONTEXT]
 ${currentCode}
@@ -19,33 +36,25 @@ ${currentCode}
 ${currentMessage}
 `;
 
-  const modelName = useThinking ? 'gemini-3-pro-preview' : 'gemini-2.5-flash';
-  
-  const config: any = {
+  const modelName = useThinking ? GEMINI_THINKING_MODEL : GEMINI_CHAT_MODEL;
+
+  const config: Record<string, unknown> = {
     systemInstruction: SYSTEM_INSTRUCTION_INTERVIEWER,
   };
 
   if (useThinking) {
-    config.thinkingConfig = { thinkingBudget: 32768 };
+    config.thinkingConfig = { thinkingBudget: THINKING_BUDGET };
   }
 
-  // We are not using chat session persistence in this simple service wrapper to keep it stateless/flexible
-  // but in a real app you might want to use ai.chats.create()
-  // Here we just use generateContent for simplicity with history injection if needed, 
-  // but for the best "Chat" experience with history, let's use ai.chats.create.
-  
   const chat = ai.chats.create({
     model: modelName,
-    config: config,
+    config,
     history: history.map(h => ({
-        role: h.role,
-        parts: [{ text: h.text }]
-    }))
+      role: h.role,
+      parts: [{ text: h.text }],
+    })),
   });
 
-  const result = await chat.sendMessage({
-    message: fullMessage
-  });
-
+  const result = await chat.sendMessage({ message: fullMessage });
   return result.text;
 };

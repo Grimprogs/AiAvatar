@@ -1,3 +1,4 @@
+/** Decodes a base64 string into a Uint8Array of raw bytes. */
 export function base64ToBytes(base64: string): Uint8Array {
   const binaryString = atob(base64);
   const len = binaryString.length;
@@ -8,6 +9,7 @@ export function base64ToBytes(base64: string): Uint8Array {
   return bytes;
 }
 
+/** Encodes a Uint8Array into a base64 string. */
 export function bytesToBase64(bytes: Uint8Array): string {
   let binary = '';
   const len = bytes.byteLength;
@@ -17,11 +19,17 @@ export function bytesToBase64(bytes: Uint8Array): string {
   return btoa(binary);
 }
 
+/**
+ * Decodes raw 16-bit PCM bytes into a Web Audio API AudioBuffer.
+ *
+ * Each sample is a signed 16-bit integer normalised to the [-1, 1] float range.
+ * Supports multi-channel audio (defaults to mono at 24 kHz).
+ */
 export async function decodeAudioData(
   data: Uint8Array,
   ctx: AudioContext,
   sampleRate: number = 24000,
-  numChannels: number = 1
+  numChannels: number = 1,
 ): Promise<AudioBuffer> {
   const dataInt16 = new Int16Array(data.buffer);
   const frameCount = dataInt16.length / numChannels;
@@ -36,15 +44,20 @@ export async function decodeAudioData(
   return buffer;
 }
 
+/**
+ * Converts a Float32Array (Web Audio format) to 16-bit signed PCM.
+ * Used for encoding microphone input before sending to the Gemini Live API.
+ */
 export function float32To16BitPCM(float32Arr: Float32Array): ArrayBuffer {
-  const l = float32Arr.length;
-  const int16 = new Int16Array(l);
-  for (let i = 0; i < l; i++) {
+  const len = float32Arr.length;
+  const int16 = new Int16Array(len);
+  for (let i = 0; i < len; i++) {
     int16[i] = float32Arr[i] * 32768;
   }
   return int16.buffer;
 }
 
+/** Reads a Blob as a base64-encoded data URL and returns only the base64 payload. */
 export async function blobToBase64(blob: Blob): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
