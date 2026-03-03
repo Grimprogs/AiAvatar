@@ -40,12 +40,18 @@ export class LiveService {
   private inputSource: MediaStreamAudioSourceNode | null = null;
   private processor: ScriptProcessorNode | null = null;
   private inputStream: MediaStream | null = null;
+  private outputMixGain: GainNode | null = null;
+  private outputAnalyser: AnalyserNode | null = null;
+  private outputMeterData: Float32Array | null = null;
+  private outputMeterRafId: number | null = null;
+  private smoothedOutputLevel: number = 0;
   private nextStartTime: number = 0;
   private activeSources: Set<AudioBufferSourceNode> = new Set();
   private isConnected: boolean = false;
   private isMicrophoneMuted: boolean = false;
 
   public onVolumeChange: ((volume: number) => void) | null = null;
+  public onOutputLevelChange: ((level: number) => void) | null = null;
 
   constructor(apiKey: string) {
     this.ai = new GoogleGenAI({ apiKey });
@@ -109,6 +115,7 @@ export class LiveService {
   private async ensureAudioContexts() {
     this.inputAudioContext = await this.ensureSingleContext(this.inputAudioContext, INPUT_SAMPLE_RATE);
     this.outputAudioContext = await this.ensureSingleContext(this.outputAudioContext, OUTPUT_SAMPLE_RATE);
+    this.ensureOutputNodes();
   }
 
   /**
@@ -124,6 +131,80 @@ export class LiveService {
     }
     if (ctx.state === 'suspended') await ctx.resume();
     return ctx;
+  }
+
+  /** Creates shared output nodes for audio playback + level metering. */
+  private ensureOutputNodes() {
+    if (!this.outputAudioContext) return;
+
+    const outputCtx = this.outputAudioContext;
+    if (
+      this.outputMixGain &&
+      this.outputAnalyser &&
+      this.outputMixGain.context === outputCtx &&
+      this.outputAnalyser.context === outputCtx
+    ) {
+      this.startOutputMetering();
+      return;
+    }
+
+    this.stopOutputMetering();
+
+    this.outputMixGain = outputCtx.createGain();
+    this.outputMixGain.gain.value = 1;
+
+    this.outputAnalyser = outputCtx.createAnalyser();
+    this.outputAnalyser.fftSize = 1024;
+    this.outputAnalyser.smoothingTimeConstant = 0.75;
+    this.outputMeterData = new Float32Array(this.outputAnalyser.fftSize);
+
+    this.outputMixGain.connect(this.outputAnalyser);
+    this.outputAnalyser.connect(outputCtx.destination);
+    this.startOutputMetering();
+  }
+
+  private startOutputMetering() {
+    if (!this.outputAnalyser || this.outputMeterRafId !== null) return;
+
+    const tick = () => {
+      if (!this.outputAnalyser || !this.outputMeterData) {
+        this.outputMeterRafId = null;
+        return;
+      }
+
+      this.outputAnalyser.getFloatTimeDomainData(this.outputMeterData);
+
+      let sum = 0;
+      const len = this.outputMeterData.length;
+      for (let i = 0; i < len; i++) {
+        const v = this.outputMeterData[i];
+        sum += v * v;
+      }
+
+      const rms = Math.sqrt(sum / len);
+      const normalized = Math.min(1, rms * 4);
+      const attack = 0.55;
+      const release = 0.15;
+      const smoothing = normalized > this.smoothedOutputLevel ? attack : release;
+      this.smoothedOutputLevel += (normalized - this.smoothedOutputLevel) * smoothing;
+
+      if (this.onOutputLevelChange) {
+        this.onOutputLevelChange(this.smoothedOutputLevel);
+      }
+
+      this.outputMeterRafId = requestAnimationFrame(tick);
+    };
+
+    this.outputMeterRafId = requestAnimationFrame(tick);
+  }
+
+  private stopOutputMetering() {
+    if (this.outputMeterRafId !== null) {
+      cancelAnimationFrame(this.outputMeterRafId);
+      this.outputMeterRafId = null;
+    }
+    this.smoothedOutputLevel = 0;
+    if (this.onOutputLevelChange) this.onOutputLevelChange(0);
   }
 
   // --- Microphone Input ---
@@ -214,6 +295,9 @@ export class LiveService {
   private async playAudioChunk(base64Audio: string) {
     // Ensure output context is ready (also needed for standalone TTS outside live session)
     this.outputAudioContext = await this.ensureSingleContext(this.outputAudioContext, OUTPUT_SAMPLE_RATE);
+    this.ensureOutputNodes();
+
+    if (!this.outputAudioContext || !this.outputMixGain) return;
 
     try {
       const audioBuffer = await decodeAudioData(
@@ -225,7 +309,7 @@ export class LiveService {
 
       const source = this.outputAudioContext.createBufferSource();
       source.buffer = audioBuffer;
-      source.connect(this.outputAudioContext.destination);
+      source.connect(this.outputMixGain);
       source.start(this.nextStartTime);
       this.nextStartTime += audioBuffer.duration;
 
@@ -246,6 +330,8 @@ export class LiveService {
     if (this.outputAudioContext) {
       this.nextStartTime = this.outputAudioContext.currentTime;
     }
+    this.smoothedOutputLevel = 0;
+    if (this.onOutputLevelChange) this.onOutputLevelChange(0);
   }
 
   // --- Public Messaging API ---
@@ -337,7 +423,12 @@ export class LiveService {
   /** Tears down the live session, releases microphone, and closes audio contexts. */
   public async disconnect() {
     this.stopAudioPlayback();
-    this.session = null;
+
+    // Close the WebSocket session before dropping the reference
+    if (this.session) {
+      try { await (this.session as any).close(); } catch { /* already closed */ }
+      this.session = null;
+    }
 
     if (this.inputSource) this.inputSource.disconnect();
     if (this.processor) this.processor.disconnect();
@@ -349,6 +440,10 @@ export class LiveService {
     if (this.inputAudioContext) await this.inputAudioContext.close();
     if (this.outputAudioContext) await this.outputAudioContext.close();
 
+    this.stopOutputMetering();
+    this.outputMixGain = null;
+    this.outputAnalyser = null;
+    this.outputMeterData = null;
     this.inputAudioContext = null;
     this.outputAudioContext = null;
     this.isConnected = false;

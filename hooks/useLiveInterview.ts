@@ -37,18 +37,34 @@ export function useLiveInterview({
   const [isLiveConnected, setIsLiveConnected] = useState(false);
   const [isConnectingLive, setIsConnectingLive] = useState(false);
   const [volume, setVolume] = useState(0);
+  const [speechLevel, setSpeechLevel] = useState(0);
 
   const liveServiceRef = useRef<LiveService | null>(null);
   const videoIntervalRef = useRef<number | null>(null);
   const lastSentCodeRef = useRef<string>('');
+
+  // Refs for values read inside async callbacks — avoids stale closures
+  const currentProblemRef = useRef(currentProblem);
+  const languageRef = useRef(language);
+  useEffect(() => { currentProblemRef.current = currentProblem; }, [currentProblem]);
+  useEffect(() => { languageRef.current = language; }, [language]);
 
   // Initialise LiveService once when apiKey is available
   useEffect(() => {
     if (apiKey && !liveServiceRef.current) {
       liveServiceRef.current = new LiveService(apiKey);
       liveServiceRef.current.onVolumeChange = (vol) => setVolume(vol);
+      liveServiceRef.current.onOutputLevelChange = (level) => setSpeechLevel(level);
     }
   }, [apiKey]);
+
+  // Cleanup on unmount — disconnect WebSocket and release microphone
+  useEffect(() => {
+    return () => {
+      if (liveServiceRef.current) liveServiceRef.current.disconnect();
+      if (videoIntervalRef.current) clearInterval(videoIntervalRef.current);
+    };
+  }, []);
 
   // Debounced code watcher — sends code updates during live sessions
   useEffect(() => {
@@ -65,13 +81,16 @@ export function useLiveInterview({
   const handleConnectLive = useCallback(async () => {
     if (!apiKey || !liveServiceRef.current) return;
 
+    const problem = currentProblemRef.current;
+    const lang = languageRef.current;
+
     try {
       setIsConnectingLive(true);
 
       const sessionInstruction = `
         ${SYSTEM_INSTRUCTION_INTERVIEWER}
-        CONTEXT: Problem: ${currentProblem.title}, Difficulty: ${currentProblem.difficulty}, Lang: ${language}
-        Description: ${currentProblem.description}
+        CONTEXT: Problem: ${problem.title}, Difficulty: ${problem.difficulty}, Lang: ${lang}
+        Description: ${problem.description}
         IMPORTANT: Start the interview IMMEDIATELY. Speak first. Introduce yourself and the problem.
       `;
 
@@ -88,7 +107,7 @@ export function useLiveInterview({
           ...prev,
           {
             id: Date.now().toString(),
-            role: 'user',
+            role: 'user' as const,
             text: 'Start Interview',
             timestamp: Date.now(),
           },
@@ -107,7 +126,7 @@ export function useLiveInterview({
     } finally {
       setIsConnectingLive(false);
     }
-  }, [apiKey, currentProblem, language, editorRef, setMessages]);
+  }, [apiKey, editorRef, setMessages]);
 
   const handleDisconnectLive = useCallback(async () => {
     if (liveServiceRef.current) await liveServiceRef.current.disconnect();
@@ -117,12 +136,14 @@ export function useLiveInterview({
     }
     setIsLiveConnected(false);
     setVolume(0);
+    setSpeechLevel(0);
   }, []);
 
   return {
     isLiveConnected,
     isConnectingLive,
     volume,
+    speechLevel,
     liveServiceRef,
     handleConnectLive,
     handleDisconnectLive,

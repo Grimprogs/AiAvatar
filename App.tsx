@@ -1,7 +1,8 @@
-import React, { useRef } from 'react';
+import React, { useRef, useEffect } from 'react';
 import CodeEditor, { type CodeEditorHandle } from '@/components/CodeEditor';
 import ChatPanel from '@/components/ChatPanel';
 import LiveControls from '@/components/LiveControls';
+import AvatarInterviewer from '@/components/AvatarInterviewer';
 import { useTheme } from '@/hooks/useTheme';
 import { useLiveInterview } from '@/hooks/useLiveInterview';
 import { useInterviewSession } from '@/hooks/useInterviewSession';
@@ -29,8 +30,10 @@ const App: React.FC = () => {
     setMessages: session.setMessages,
   });
 
-  // Wire live refs into session for message routing
-  session.setLiveRefs(live.isLiveConnected, live.liveServiceRef);
+  // Wire live refs into session for message routing (effect, not render-phase)
+  useEffect(() => {
+    session.setLiveRefs(live.isLiveConnected, live.liveServiceRef);
+  }, [live.isLiveConnected, live.liveServiceRef, session.setLiveRefs]);
 
   return (
     <div className="h-screen w-full flex flex-col bg-app text-primary font-sans overflow-hidden transition-colors duration-300">
@@ -42,6 +45,10 @@ const App: React.FC = () => {
 
       <main className="flex-1 flex overflow-hidden">
         <div className="flex-1 flex flex-col relative min-w-0">
+          <AvatarInterviewer
+            speechLevel={live.speechLevel}
+            isLiveConnected={live.isLiveConnected}
+          />
           <DescriptionBanner description={session.currentProblem.description} />
           <div className="flex-1 relative">
             <CodeEditor

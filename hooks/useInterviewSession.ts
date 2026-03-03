@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import type { ChatMessage, InterviewLanguage, InterviewProblem } from '@/types';
 import type { LiveService } from '@/services/liveService';
 import { generateChatMessage } from '@/services/geminiService';
@@ -12,8 +12,8 @@ interface UseInterviewSessionParams {
  * Manages the interview session state: problem selection, language,
  * code editor content, chat messages, and message sending (text or live).
  *
- * Call `setLiveRefs()` after the live hook initialises to wire up
- * live-connected state without creating a circular dependency.
+ * Call `setLiveRefs()` inside a useEffect after the live hook initialises
+ * to wire up live-connected state without creating a circular dependency.
  */
 export function useInterviewSession({ apiKey }: UseInterviewSessionParams) {
   const [currentProblem, setCurrentProblem] = useState<InterviewProblem>(PROBLEMS[0]);
@@ -22,13 +22,24 @@ export function useInterviewSession({ apiKey }: UseInterviewSessionParams) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isLoadingChat, setIsLoadingChat] = useState(false);
 
-  // Live state refs — updated externally via setLiveRefs()
+  // Refs for values read inside async callbacks — avoids stale closures
+  // and keeps useCallback dependency arrays minimal.
   const isLiveConnectedRef = useRef(false);
   const liveServiceExtRef = useRef<LiveService | null>(null);
+  const messagesRef = useRef(messages);
+  const currentProblemRef = useRef(currentProblem);
+  const languageRef = useRef(language);
+  const codeRef = useRef(code);
+
+  // Keep refs in sync with state
+  useEffect(() => { messagesRef.current = messages; }, [messages]);
+  useEffect(() => { currentProblemRef.current = currentProblem; }, [currentProblem]);
+  useEffect(() => { languageRef.current = language; }, [language]);
+  useEffect(() => { codeRef.current = code; }, [code]);
 
   /**
-   * Synchronise live-interview refs each render.
-   * Called from App after both hooks are initialised.
+   * Synchronise live-interview refs.
+   * Must be called inside a useEffect in the parent component.
    */
   const setLiveRefs = useCallback(
     (connected: boolean, service: React.RefObject<LiveService | null>) => {
@@ -51,18 +62,21 @@ export function useInterviewSession({ apiKey }: UseInterviewSessionParams) {
   }, [currentProblem.title]);
 
   const handleRandomProblem = useCallback(() => {
-    const random = PROBLEMS[Math.floor(Math.random() * PROBLEMS.length)];
+    // Filter out current problem so user always sees a different one
+    const others = PROBLEMS.filter(p => p.id !== currentProblemRef.current.id);
+    const pool = others.length > 0 ? others : PROBLEMS;
+    const random = pool[Math.floor(Math.random() * pool.length)];
     setCurrentProblem(random);
-    setCode(random.starters[language]);
-  }, [language]);
+    setCode(random.starters[languageRef.current]);
+  }, []);
 
   const handleLanguageChange = useCallback(
     (lang: InterviewLanguage) => {
-      if (lang === language) return;
+      if (lang === languageRef.current) return;
       setLanguage(lang);
-      setCode(currentProblem.starters[lang]);
+      setCode(currentProblemRef.current.starters[lang]);
     },
-    [language, currentProblem],
+    [],
   );
 
   const handleSendMessage = useCallback(
@@ -81,22 +95,27 @@ export function useInterviewSession({ apiKey }: UseInterviewSessionParams) {
         return;
       }
 
-      // Standard text chat path
+      // Build history including the message we just added (fixes stale closure)
+      const history = [...messagesRef.current, newUserMsg].map(m => ({
+        role: m.role,
+        text: m.text,
+      }));
+
+      const problem = currentProblemRef.current;
+      const contextPrompt = `
+      [Current Problem]
+      Title: ${problem.title}
+      Description: ${problem.description}
+      Language: ${languageRef.current}
+      `;
+
       setIsLoadingChat(true);
       try {
-        const history = messages.map(m => ({ role: m.role, text: m.text }));
-        const contextPrompt = `
-        [Current Problem]
-        Title: ${currentProblem.title}
-        Description: ${currentProblem.description}
-        Language: ${language}
-        `;
-
         const responseText = await generateChatMessage(
           apiKey,
           history,
           contextPrompt + '\n' + text,
-          code,
+          codeRef.current,
           useThinking,
         );
 
@@ -125,8 +144,17 @@ export function useInterviewSession({ apiKey }: UseInterviewSessionParams) {
         setIsLoadingChat(false);
       }
     },
-    [apiKey, messages, currentProblem, language, code],
+    [apiKey],
   );
+
+  const latestModelText = useMemo(() => {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if (messages[i].role === 'model' && messages[i].text.trim()) {
+        return messages[i].text;
+      }
+    }
+    return '';
+  }, [messages]);
 
   return {
     currentProblem,
@@ -140,5 +168,6 @@ export function useInterviewSession({ apiKey }: UseInterviewSessionParams) {
     handleLanguageChange,
     handleSendMessage,
     setLiveRefs,
+    latestModelText,
   } as const;
 }
