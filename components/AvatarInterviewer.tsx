@@ -643,61 +643,46 @@ function VRMAvatarMesh({
     }
 
     // ══════════════════════════════════════════════════════════════════════
-    // LAYER 3 cont. ── ARM / SHOULDER overrides  (part of the LLM behavior switch)
+    // LAYER 3 cont. ── ARM / SHOULDER overrides
     // ══════════════════════════════════════════════════════════════════════
-    const rUA = h.getRawBoneNode(VRMHumanBoneName.RightUpperArm);
-    const rLA = h.getRawBoneNode(VRMHumanBoneName.RightLowerArm);
-    const lUA = h.getRawBoneNode(VRMHumanBoneName.LeftUpperArm);
-    const lLA = h.getRawBoneNode(VRMHumanBoneName.LeftLowerArm);
-    const rSh = h.getRawBoneNode(VRMHumanBoneName.RightShoulder);
-    const lSh = h.getRawBoneNode(VRMHumanBoneName.LeftShoulder);
-    const rHd = h.getRawBoneNode(VRMHumanBoneName.RightHand);
+    // We use Normalized bones here so we don't fight the raw skeleton
+    const rUA = h.getNormalizedBoneNode(VRMHumanBoneName.RightUpperArm);
+    const rLA = h.getNormalizedBoneNode(VRMHumanBoneName.RightLowerArm);
+    const lUA = h.getNormalizedBoneNode(VRMHumanBoneName.LeftUpperArm);
+    const lLA = h.getNormalizedBoneNode(VRMHumanBoneName.LeftLowerArm);
+    const rSh = h.getNormalizedBoneNode(VRMHumanBoneName.RightShoulder);
+    const lSh = h.getNormalizedBoneNode(VRMHumanBoneName.LeftShoulder);
+    const rHd = h.getNormalizedBoneNode(VRMHumanBoneName.RightHand);
 
-    // ── HAND-TO-MOUTH IK  (right arm lifts when T.handToMouth) ───────────
-    // Simplified positional IK: drive upper arm forward + inward + bend elbow
-    // so the avatar's right hand reaches toward her own mouth.
+    // THE MAGIC CONSTANTS: We define "Arms down" and apply it to EVERY state.
+    const R_DOWN = -1.25;
+    const L_DOWN = 1.25;
+
     if ((tracked && (T.handToMouth || T.isGiggling)) || behaviorMode === 'shyGiggle') {
-      // Shoulder — not touching, let it follow naturally
-      if (rSh) {
-        rSh.rotation.z = lp(rSh.rotation.z, -0.10, 0.10);
-        rSh.rotation.x = lp(rSh.rotation.x,  0.05, 0.10);
-      }
-      // Upper arm: swing forward + medially
-      if (rUA) {
-        rUA.rotation.x = lp(rUA.rotation.x, -1.50, 0.14);   // lift forward
-        rUA.rotation.z = lp(rUA.rotation.z, -0.55, 0.14);   // cross midline
-      }
-      // Lower arm: bend elbow ~100°
-      if (rLA) {
-        rLA.rotation.x = lp(rLA.rotation.x, -1.00, 0.12);
-      }
-      // Wrist: tilt toward face
-      if (rHd) {
-        rHd.rotation.x = lp(rHd.rotation.x, -0.20, 0.10);
-        rHd.rotation.z = lp(rHd.rotation.z,  0.15, 0.10);
-      }
-      // Left arm — natural rest while right is raised
+      if (rSh) { rSh.rotation.z = lp(rSh.rotation.z, -0.10, 0.10); rSh.rotation.x = lp(rSh.rotation.x, 0.05, 0.10); }
+      if (rUA) { rUA.rotation.x = lp(rUA.rotation.x, -1.50, 0.14); rUA.rotation.z = lp(rUA.rotation.z, -0.55, 0.14); }
+      if (rLA) { rLA.rotation.x = lp(rLA.rotation.x, -1.00, 0.12); }
+      if (rHd) { rHd.rotation.x = lp(rHd.rotation.x, -0.20, 0.10); rHd.rotation.z = lp(rHd.rotation.z, 0.15, 0.10); }
+
       if (lSh) { lSh.rotation.z = lp(lSh.rotation.z, 0, 0.06); lSh.rotation.x = lp(lSh.rotation.x, 0, 0.06); }
-      if (lUA) { lUA.rotation.x = lp(lUA.rotation.x, 0, 0.07); lUA.rotation.z = lp(lUA.rotation.z, 0, 0.07); }
+      if (lUA) { lUA.rotation.x = lp(lUA.rotation.x, 0, 0.07); lUA.rotation.z = lp(lUA.rotation.z, L_DOWN, 0.07); }
       if (lLA) { lLA.rotation.x = lp(lLA.rotation.x, 0, 0.07); }
 
     } else if (behaviorMode === 'guilty') {
-      // GUILTY: arms slump inward — right crosses slightly (shame posture)
       if (rSh) { rSh.rotation.z = lp(rSh.rotation.z, -0.12, 0.04); rSh.rotation.x = lp(rSh.rotation.x, 0.15, 0.04); }
       if (lSh) { lSh.rotation.z = lp(lSh.rotation.z,  0.12, 0.04); lSh.rotation.x = lp(lSh.rotation.x, 0.15, 0.04); }
-      if (rUA) { rUA.rotation.x = lp(rUA.rotation.x, 0.25, 0.05); rUA.rotation.z = lp(rUA.rotation.z, -0.25, 0.05); }
-      if (lUA) { lUA.rotation.x = lp(lUA.rotation.x, 0.20, 0.05); lUA.rotation.z = lp(lUA.rotation.z,  0.25, 0.05); }
+      if (rUA) { rUA.rotation.x = lp(rUA.rotation.x, 0.25, 0.05); rUA.rotation.z = lp(rUA.rotation.z, R_DOWN - 0.25, 0.05); }
+      if (lUA) { lUA.rotation.x = lp(lUA.rotation.x, 0.20, 0.05); lUA.rotation.z = lp(lUA.rotation.z, L_DOWN + 0.25, 0.05); }
       if (rLA) { rLA.rotation.x = lp(rLA.rotation.x, 0.10, 0.05); }
       if (lLA) { lLA.rotation.x = lp(lLA.rotation.x, 0.10, 0.05); }
       if (rHd) { rHd.rotation.x = lp(rHd.rotation.x, 0, 0.05); rHd.rotation.z = lp(rHd.rotation.z, 0, 0.05); }
 
     } else if (behaviorMode === 'loudLaugh') {
-      // LOUD LAUGH: arms relaxed outward, bouncing with laughter
       const b1 = Math.sin(now * 4.5) * 0.10;
       if (rSh) { rSh.rotation.z = lp(rSh.rotation.z, 0, 0.06); rSh.rotation.x = lp(rSh.rotation.x, 0, 0.06); }
       if (lSh) { lSh.rotation.z = lp(lSh.rotation.z, 0, 0.06); lSh.rotation.x = lp(lSh.rotation.x, 0, 0.06); }
-      if (rUA) { rUA.rotation.x = lp(rUA.rotation.x, -0.25, 0.07); rUA.rotation.z = lp(rUA.rotation.z, -0.35 + b1, 0.07); }
-      if (lUA) { lUA.rotation.x = lp(lUA.rotation.x, -0.20, 0.07); lUA.rotation.z = lp(lUA.rotation.z,  0.30 - b1, 0.07); }
+      if (rUA) { rUA.rotation.x = lp(rUA.rotation.x, -0.25, 0.07); rUA.rotation.z = lp(rUA.rotation.z, R_DOWN - 0.35 + b1, 0.07); }
+      if (lUA) { lUA.rotation.x = lp(lUA.rotation.x, -0.20, 0.07); lUA.rotation.z = lp(lUA.rotation.z, L_DOWN + 0.30 - b1, 0.07); }
       if (rLA) { rLA.rotation.x = lp(rLA.rotation.x, 0, 0.06); }
       if (lLA) { lLA.rotation.x = lp(lLA.rotation.x, 0, 0.06); }
       if (rHd) { rHd.rotation.x = lp(rHd.rotation.x, 0, 0.06); rHd.rotation.z = lp(rHd.rotation.z, 0, 0.06); }
@@ -705,31 +690,30 @@ function VRMAvatarMesh({
     } else if (emotionMode === 'sad') {
       if (rSh) { rSh.rotation.z = lp(rSh.rotation.z, -0.18, 0.04); rSh.rotation.x = lp(rSh.rotation.x, 0.12, 0.04); }
       if (lSh) { lSh.rotation.z = lp(lSh.rotation.z,  0.18, 0.04); lSh.rotation.x = lp(lSh.rotation.x, 0.12, 0.04); }
-      if (rUA) { rUA.rotation.x = lp(rUA.rotation.x, 0.10, 0.04); rUA.rotation.z = lp(rUA.rotation.z, -0.08, 0.04); }
-      if (lUA) { lUA.rotation.x = lp(lUA.rotation.x, 0.10, 0.04); lUA.rotation.z = lp(lUA.rotation.z,  0.08, 0.04); }
+      if (rUA) { rUA.rotation.x = lp(rUA.rotation.x, 0.10, 0.04); rUA.rotation.z = lp(rUA.rotation.z, R_DOWN - 0.08, 0.04); }
+      if (lUA) { lUA.rotation.x = lp(lUA.rotation.x, 0.10, 0.04); lUA.rotation.z = lp(lUA.rotation.z, L_DOWN + 0.08, 0.04); }
       if (rLA) { rLA.rotation.x = lp(rLA.rotation.x, 0, 0.05); }
       if (lLA) { lLA.rotation.x = lp(lLA.rotation.x, 0, 0.05); }
       if (rHd) { rHd.rotation.x = lp(rHd.rotation.x, 0, 0.05); rHd.rotation.z = lp(rHd.rotation.z, 0, 0.05); }
 
     } else if (isSpeaking) {
-      // SPEAKING: gesture arms
       const intensity = emotionMode === 'angry' ? 1.4 : emotionMode === 'happy' ? 1.2 : 1.0;
-      const b1 = Math.sin(now * 3.2)               * 0.14 * intensity;
+      const b1 = Math.sin(now * 3.2) * 0.14 * intensity;
       const b2 = Math.sin(now * 3.2 + Math.PI * .5) * 0.11 * intensity;
       if (rSh) { rSh.rotation.z = lp(rSh.rotation.z, 0, 0.06); rSh.rotation.x = lp(rSh.rotation.x, 0, 0.06); }
       if (lSh) { lSh.rotation.z = lp(lSh.rotation.z, 0, 0.06); lSh.rotation.x = lp(lSh.rotation.x, 0, 0.06); }
-      if (rUA) { rUA.rotation.x = lp(rUA.rotation.x, -0.45 * intensity, 0.10); rUA.rotation.z = lp(rUA.rotation.z, -0.22 * intensity, 0.10); }
+      if (rUA) { rUA.rotation.x = lp(rUA.rotation.x, -0.45 * intensity, 0.10); rUA.rotation.z = lp(rUA.rotation.z, R_DOWN - 0.22 * intensity, 0.10); }
       if (rLA) { rLA.rotation.x = lp(rLA.rotation.x, -0.30 + b1, 0.13); }
-      if (lUA) { lUA.rotation.x = lp(lUA.rotation.x, -0.28 * intensity, 0.09); lUA.rotation.z = lp(lUA.rotation.z, 0.16 * intensity, 0.09); }
+      if (lUA) { lUA.rotation.x = lp(lUA.rotation.x, -0.28 * intensity, 0.09); lUA.rotation.z = lp(lUA.rotation.z, L_DOWN + 0.16 * intensity, 0.09); }
       if (lLA) { lLA.rotation.x = lp(lLA.rotation.x, -0.18 + b2, 0.11); }
       if (rHd) { rHd.rotation.x = lp(rHd.rotation.x, 0, 0.08); rHd.rotation.z = lp(rHd.rotation.z, 0, 0.08); }
 
     } else {
-      // IDLE / rest
+      // IDLE REST
       if (rSh) { rSh.rotation.z = lp(rSh.rotation.z, 0, 0.05); rSh.rotation.x = lp(rSh.rotation.x, 0, 0.05); }
       if (lSh) { lSh.rotation.z = lp(lSh.rotation.z, 0, 0.05); lSh.rotation.x = lp(lSh.rotation.x, 0, 0.05); }
-      if (rUA) { rUA.rotation.x = lp(rUA.rotation.x, 0, 0.07); rUA.rotation.z = lp(rUA.rotation.z, 0, 0.07); }
-      if (lUA) { lUA.rotation.x = lp(lUA.rotation.x, 0, 0.07); lUA.rotation.z = lp(lUA.rotation.z, 0, 0.07); }
+      if (rUA) { rUA.rotation.x = lp(rUA.rotation.x, 0, 0.07); rUA.rotation.z = lp(rUA.rotation.z, R_DOWN, 0.07); }
+      if (lUA) { lUA.rotation.x = lp(lUA.rotation.x, 0, 0.07); lUA.rotation.z = lp(lUA.rotation.z, L_DOWN, 0.07); }
       if (rLA) { rLA.rotation.x = lp(rLA.rotation.x, 0, 0.07); }
       if (lLA) { lLA.rotation.x = lp(lLA.rotation.x, 0, 0.07); }
       if (rHd) { rHd.rotation.x = lp(rHd.rotation.x, 0, 0.07); rHd.rotation.z = lp(rHd.rotation.z, 0, 0.07); }
@@ -853,6 +837,7 @@ export default function AvatarInterviewer() {
   const [isShaking,    setIsShaking]    = useState(false);
   const [audioError,   setAudioError]   = useState<string | null>(null);
   const [showCamera,   setShowCamera]   = useState(false);
+  const [inputText,    setInputText]    = useState('');
 
   // MediaPipe tracking hook
   const { videoRef, trackingRef, status: trackStatus, statusMsg: trackMsg,
@@ -937,6 +922,41 @@ export default function AvatarInterviewer() {
   }, [ensureCtx, stopAll]);
 
   const handleStop  = useCallback(() => { stopAll(); setAudioMode('off'); }, [stopAll]);
+
+  // ── TTS: pipe a spoken sentence through the Web Audio analyser for lip-sync ──
+  const ttsAudioRef = useRef<HTMLAudioElement | null>(null);
+  const handleTTS = useCallback(async () => {
+    if (!inputText.trim()) return;
+    setAudioError(null); stopAll();
+    // Clean up any previous TTS audio element
+    if (ttsAudioRef.current) { ttsAudioRef.current.pause(); ttsAudioRef.current = null; }
+    try {
+      const { ctx, analyser } = ensureCtx();
+      // Google TTS endpoint — may be blocked by CORS in some browsers.
+      // Swap for any MP3/WAV URL or a CORS-enabled TTS proxy for production.
+      const url = `https://translate.google.com/translate_tts?ie=UTF-8&tl=en&client=tw-ob&q=${encodeURIComponent(inputText)}`;
+      const audio = new Audio(url);
+      audio.crossOrigin = 'anonymous';
+      ttsAudioRef.current = audio;
+      // createMediaElementSource throws if called twice on the same element,
+      // so we wait until the audio is ready before wiring into the graph.
+      await new Promise<void>((resolve, reject) => {
+        audio.addEventListener('canplaythrough', () => resolve(), { once: true });
+        audio.addEventListener('error', (_e) => reject(new Error('Audio load failed')), { once: true });
+        audio.load();
+      });
+      const src = ctx.createMediaElementSource(audio);
+      src.connect(analyser);
+      analyser.connect(ctx.destination);
+      audio.play();
+      setAudioMode('synth');   // lip-sync engine reads the analyser in 'synth' mode
+      audio.addEventListener('ended', () => { setAudioMode('off'); }, { once: true });
+    } catch (err) {
+      console.error('[TTS]', err);
+      setAudioError('TTS failed — check console. CORS may be blocking the request.');
+    }
+  }, [inputText, ensureCtx, stopAll]);
+
   const handleNod   = useCallback(() => { if (!isNodding) setIsNodding(true);  }, [isNodding]);
   const handleShake = useCallback(() => { if (!isShaking) setIsShaking(true);  }, [isShaking]);
   const onNodEnd    = useCallback(() => setIsNodding(false),  []);
@@ -1080,6 +1100,26 @@ export default function AvatarInterviewer() {
               <option key={k} value={k}>{EMOTION_LABELS[k]}</option>
             ))}
           </select>
+        </div>
+
+        <div className="w-full h-px bg-white/5" />
+
+        {/* ── Text-to-Speech ── */}
+        <div className="flex flex-col items-center gap-2 w-full">
+          <span className="text-slate-500 text-[10px] uppercase tracking-widest">Text-to-Speech</span>
+          <div className="flex gap-2 w-full max-w-sm">
+            <input
+              type="text"
+              value={inputText}
+              onChange={e => setInputText(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && handleTTS()}
+              placeholder="Type a sentence to speak…"
+              className="flex-1 min-w-0 bg-white/5 border border-white/15 text-slate-200 text-xs rounded-lg px-3 py-1.5 outline-none focus:border-violet-400 placeholder:text-slate-600"
+            />
+            <CtrlBtn onClick={handleTTS} active={audioMode === 'synth'} color="violet" disabled={!inputText.trim()}>
+              🗣️ Speak Text
+            </CtrlBtn>
+          </div>
         </div>
 
         <div className="w-full h-px bg-white/5" />
