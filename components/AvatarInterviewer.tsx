@@ -836,8 +836,9 @@ export default function AvatarInterviewer() {
   const [isNodding,    setIsNodding]    = useState(false);
   const [isShaking,    setIsShaking]    = useState(false);
   const [audioError,   setAudioError]   = useState<string | null>(null);
-  const [showCamera,   setShowCamera]   = useState(false);
-  const [inputText,    setInputText]    = useState('');
+  const [showCamera,      setShowCamera]      = useState(false);
+  const [inputText,       setInputText]       = useState('Hello! I am your AI interviewer.');
+  const [isSpeakingText,  setIsSpeakingText]  = useState(false);
 
   // MediaPipe tracking hook
   const { videoRef, trackingRef, status: trackStatus, statusMsg: trackMsg,
@@ -923,38 +924,40 @@ export default function AvatarInterviewer() {
 
   const handleStop  = useCallback(() => { stopAll(); setAudioMode('off'); }, [stopAll]);
 
-  // ── TTS: pipe a spoken sentence through the Web Audio analyser for lip-sync ──
+  // ── TEXT TO SPEECH (TTS) ──────────────────────────────────────────────────
   const ttsAudioRef = useRef<HTMLAudioElement | null>(null);
-  const handleTTS = useCallback(async () => {
+  const handleTTS = useCallback(() => {
     if (!inputText.trim()) return;
     setAudioError(null); stopAll();
-    // Clean up any previous TTS audio element
     if (ttsAudioRef.current) { ttsAudioRef.current.pause(); ttsAudioRef.current = null; }
-    try {
-      const { ctx, analyser } = ensureCtx();
-      // Google TTS endpoint — may be blocked by CORS in some browsers.
-      // Swap for any MP3/WAV URL or a CORS-enabled TTS proxy for production.
-      const url = `https://translate.google.com/translate_tts?ie=UTF-8&tl=en&client=tw-ob&q=${encodeURIComponent(inputText)}`;
-      const audio = new Audio(url);
-      audio.crossOrigin = 'anonymous';
-      ttsAudioRef.current = audio;
-      // createMediaElementSource throws if called twice on the same element,
-      // so we wait until the audio is ready before wiring into the graph.
-      await new Promise<void>((resolve, reject) => {
-        audio.addEventListener('canplaythrough', () => resolve(), { once: true });
-        audio.addEventListener('error', (_e) => reject(new Error('Audio load failed')), { once: true });
-        audio.load();
-      });
+    const { ctx, analyser } = ensureCtx();
+    // StreamElements TTS — free, no CORS issues
+    const url = `https://api.streamelements.com/kappa/v2/speech?voice=Brian&text=${encodeURIComponent(inputText)}`;
+    const audio = new Audio(url);
+    audio.crossOrigin = 'anonymous';
+    ttsAudioRef.current = audio;
+
+    audio.onplay = () => {
       const src = ctx.createMediaElementSource(audio);
       src.connect(analyser);
       analyser.connect(ctx.destination);
-      audio.play();
-      setAudioMode('synth');   // lip-sync engine reads the analyser in 'synth' mode
-      audio.addEventListener('ended', () => { setAudioMode('off'); }, { once: true });
-    } catch (err) {
-      console.error('[TTS]', err);
-      setAudioError('TTS failed — check console. CORS may be blocking the request.');
-    }
+      synthNodesRef.current.push(src as unknown as AudioNode);
+      setAudioMode('synth');
+      setIsSpeakingText(true);
+    };
+
+    audio.onended = () => {
+      setIsSpeakingText(false);
+      setAudioMode('off');
+      stopAll();
+    };
+
+    audio.onerror = () => {
+      setAudioError('TTS failed to load. Check internet connection.');
+      setIsSpeakingText(false);
+    };
+
+    audio.play().catch(() => setAudioError('Click the screen first to allow audio.'));
   }, [inputText, ensureCtx, stopAll]);
 
   const handleNod   = useCallback(() => { if (!isNodding) setIsNodding(true);  }, [isNodding]);
@@ -1104,22 +1107,19 @@ export default function AvatarInterviewer() {
 
         <div className="w-full h-px bg-white/5" />
 
-        {/* ── Text-to-Speech ── */}
-        <div className="flex flex-col items-center gap-2 w-full">
-          <span className="text-slate-500 text-[10px] uppercase tracking-widest">Text-to-Speech</span>
-          <div className="flex gap-2 w-full max-w-sm">
-            <input
-              type="text"
-              value={inputText}
-              onChange={e => setInputText(e.target.value)}
-              onKeyDown={e => e.key === 'Enter' && handleTTS()}
-              placeholder="Type a sentence to speak…"
-              className="flex-1 min-w-0 bg-white/5 border border-white/15 text-slate-200 text-xs rounded-lg px-3 py-1.5 outline-none focus:border-violet-400 placeholder:text-slate-600"
-            />
-            <CtrlBtn onClick={handleTTS} active={audioMode === 'synth'} color="violet" disabled={!inputText.trim()}>
-              🗣️ Speak Text
-            </CtrlBtn>
-          </div>
+        {/* ── Text-To-Speech (TTS) ── */}
+        <div className="flex flex-col items-center gap-2 w-full max-w-md">
+          <input
+            type="text"
+            value={inputText}
+            onChange={e => setInputText(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && handleTTS()}
+            placeholder="Type a sentence here..."
+            className="w-full bg-black/40 border border-white/20 text-white text-xs rounded-lg px-3 py-2 outline-none focus:border-sky-400"
+          />
+          <CtrlBtn onClick={handleTTS} active={isSpeakingText} color="sky">
+            🗣️ Speak Text
+          </CtrlBtn>
         </div>
 
         <div className="w-full h-px bg-white/5" />
