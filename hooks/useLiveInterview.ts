@@ -1,6 +1,7 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { LiveService } from '@/services/liveService';
 import type { CodeEditorHandle } from '@/components/CodeEditor';
+import type { AvatarInterviewerHandle } from '@/components/AvatarInterviewer';
 import type { ChatMessage, InterviewLanguage, InterviewProblem } from '@/types';
 import {
   SYSTEM_INSTRUCTION_INTERVIEWER,
@@ -14,6 +15,7 @@ interface UseLiveInterviewParams {
   language: InterviewLanguage;
   code: string;
   editorRef: React.RefObject<CodeEditorHandle | null>;
+  avatarRef: React.RefObject<AvatarInterviewerHandle | null>;
   setMessages: React.Dispatch<React.SetStateAction<ChatMessage[]>>;
 }
 
@@ -32,6 +34,7 @@ export function useLiveInterview({
   language,
   code,
   editorRef,
+  avatarRef,
   setMessages,
 }: UseLiveInterviewParams) {
   const [isLiveConnected, setIsLiveConnected] = useState(false);
@@ -41,6 +44,7 @@ export function useLiveInterview({
 
   const liveServiceRef = useRef<LiveService | null>(null);
   const videoIntervalRef = useRef<number | null>(null);
+  const frameAlternatorRef = useRef(false);
   const lastSentCodeRef = useRef<string>('');
 
   // Refs for values read inside async callbacks — avoids stale closures
@@ -114,10 +118,19 @@ export function useLiveInterview({
         ]);
       }, 1000);
 
-      // Begin periodic video frame capture
+      // Begin periodic video frame capture alternating between Code Editor and WebCam
       videoIntervalRef.current = window.setInterval(async () => {
-        if (editorRef.current && liveServiceRef.current) {
-          const base64Frame = await editorRef.current.captureFrame();
+        if (liveServiceRef.current) {
+          let base64Frame: string | null = null;
+          frameAlternatorRef.current = !frameAlternatorRef.current;
+
+          if (frameAlternatorRef.current && avatarRef.current) {
+            base64Frame = avatarRef.current.captureWebcamFrame();
+          }
+          if (!base64Frame && editorRef.current) {
+            base64Frame = await editorRef.current.captureFrame();
+          }
+
           if (base64Frame) await liveServiceRef.current.sendVideoFrame(base64Frame);
         }
       }, VIDEO_FRAME_INTERVAL_MS);

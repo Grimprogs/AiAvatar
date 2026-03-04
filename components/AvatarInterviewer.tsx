@@ -1,22 +1,64 @@
-import React, { Suspense, useEffect, useRef } from 'react';
+import React, { Suspense, useEffect, useRef, forwardRef, useImperativeHandle } from 'react';
 import { Canvas, useFrame } from '@react-three/fiber';
-import { VRMHumanBoneName, VRMLoaderPlugin, type VRM } from '@pixiv/three-vrm';
+import { VRMLoaderPlugin, VRMHumanBoneName, type VRM } from '@pixiv/three-vrm';
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { useVRMFace } from '../hooks/useVRMFace';
+import { useVRMPose } from '../hooks/useVRMPose';
+import { useMediaPipeTracking, type TrackingData } from '../hooks/useMediaPipeTracking';
+
+/*
+  AvatarInterviewer.tsx — annotated
+
+  This file provides a small embedded avatar preview using a VRM model.
+  Key concepts and flow:
+  - `useMediaPipeTracking` manages webcam + MediaPipe face tracking and exposes
+    a `trackingRef` (used by face/pose hooks) and a `videoRef` for capture.
+  - `useVRMFace` computes and applies VRM expression blendshapes each frame.
+  - `useVRMPose` drives bone rotations (neck, arms, chest) and exposes a
+    `jitterObj` used as the VRM lookAt target.
+  - `VRMHead` loads the VRM and runs a per-frame loop: face.tick -> pose.tick -> vrm.update
+  - The exported component is a `forwardRef` wrapper that exposes `captureWebcamFrame`
+    via `useImperativeHandle` so callers can snapshot the webcam from the parent.
+*/
 
 interface AvatarInterviewerProps {
   speechLevel: number;
   isLiveConnected: boolean;
 }
 
-function VRMHead({ speechLevel }: { speechLevel: number }) {
-  const rootRef = useRef<THREE.Group>(null);
-  const vrmRef = useRef<VRM | null>(null);
-  const speechRef = useRef(0);
+export interface AvatarInterviewerHandle {
+  captureWebcamFrame: () => string | null;
+}
 
-  useEffect(() => {
-    speechRef.current = speechLevel;
-  }, [speechLevel]);
+function VRMHead({ speechLevel, trackingRef }: { speechLevel: number; trackingRef: React.RefObject<TrackingData> }) {
+  // `rootRef` is the Three.js group that will receive the VRM scene once loaded.
+  const rootRef = useRef<THREE.Group>(null);
+  // `vrmRef` holds the loaded VRM instance so the frame loop can update it.
+  const vrmRef = useRef<VRM | null>(null);
+
+  // Face hook: handles expressions (visemes, blinks) and exposes a `tick(now, delta)`.
+  // We pass `speechLevel` so the face logic can bias lip-sync intensity.
+  const face = useVRMFace({
+    vrmRef,
+    trackingRef,
+    emotionMode: 'neutral',
+    behaviorMode: 'neutral',
+    speechLevel
+  });
+
+  // Pose hook: bone rotations and look-at jitter. It exposes `tick(delta, now, ...)`
+  // and a `jitterObj` which we assign to `vrm.lookAt.target` after loading.
+  const pose = useVRMPose({
+    vrmRef,
+    trackingRef,
+    emotionMode: 'neutral',
+    behaviorMode: 'neutral',
+    isNodding: false,
+    isShaking: false,
+    onNodEnd: () => { },
+    onShakeEnd: () => { }
+  });
 
   useEffect(() => {
     const loader = new GLTFLoader();
@@ -25,15 +67,23 @@ function VRMHead({ speechLevel }: { speechLevel: number }) {
     loader.load(
       '/Anurag.vrm',
       (gltf) => {
+        // The VRM loader attaches the VRM instance to `gltf.userData.vrm`.
         const vrm = gltf.userData.vrm as VRM | undefined;
         if (!vrm || !rootRef.current) return;
+
+        // Wire the lookAt target to the pose jitter object so the head follows it.
+        if (pose.jitterObj.current) {
+          vrm.lookAt.target = pose.jitterObj.current;
+        }
+
+        // Add the VRM scene to our group and keep a reference for updates.
         rootRef.current.add(vrm.scene);
         vrmRef.current = vrm;
       },
       undefined,
-      () => {
-        // Keep a silent failure path so the rest of the app remains usable.
-      },
+      (err) => {
+        console.error('Failed to load VRM', err);
+      }
     );
 
     return () => {
@@ -44,100 +94,68 @@ function VRMHead({ speechLevel }: { speechLevel: number }) {
     };
   }, []);
 
+  // The per-frame update: compute expressions first, then apply bone pose.
+  // Order matters so expressions (jaw open) can influence pose reactions.
   useFrame((state, delta) => {
     const vrm = vrmRef.current;
     if (!vrm) return;
+    const now = state.clock.elapsedTime;
 
-    const target = THREE.MathUtils.clamp(speechRef.current * 2.35, 0, 1);
-    const currentAa = vrm.expressionManager?.getValue('aa') ?? 0;
-    const aa = THREE.MathUtils.damp(currentAa, target, target > currentAa ? 12 : 7, delta);
+    // face.tick returns `isSpeaking`/`headReact` and a smoothed jaw value (`curAa`).
+    const { isSpeaking, headReact, curAa } = face.tick(now, delta);
+    // Pose uses the jaw value and speaking flags to drive neck/head/arm motion.
+    pose.tick(delta, now, isSpeaking, headReact, curAa);
 
-    vrm.expressionManager?.setValue('aa', aa);
-    vrm.expressionManager?.setValue('ee', aa * 0.58);
-    vrm.expressionManager?.setValue('ih', aa * 0.45);
-    vrm.expressionManager?.setValue('oh', aa * 0.62);
-    vrm.expressionManager?.setValue('ou', aa * 0.4);
-    vrm.expressionManager?.setValue('happy', aa * 0.18);
-    vrm.expressionManager?.setValue('blink', 0);
-    vrm.expressionManager?.update();
-
-    const head = vrm.humanoid.getNormalizedBoneNode(VRMHumanBoneName.Head);
-    const neck = vrm.humanoid.getNormalizedBoneNode(VRMHumanBoneName.Neck);
-    const rSh = vrm.humanoid.getNormalizedBoneNode(VRMHumanBoneName.RightShoulder);
-    const lSh = vrm.humanoid.getNormalizedBoneNode(VRMHumanBoneName.LeftShoulder);
-    const rUA = vrm.humanoid.getNormalizedBoneNode(VRMHumanBoneName.RightUpperArm);
-    const lUA = vrm.humanoid.getNormalizedBoneNode(VRMHumanBoneName.LeftUpperArm);
-    const rLA = vrm.humanoid.getNormalizedBoneNode(VRMHumanBoneName.RightLowerArm);
-    const lLA = vrm.humanoid.getNormalizedBoneNode(VRMHumanBoneName.LeftLowerArm);
-    const rHand = vrm.humanoid.getNormalizedBoneNode(VRMHumanBoneName.RightHand);
-    const lHand = vrm.humanoid.getNormalizedBoneNode(VRMHumanBoneName.LeftHand);
-    if (head && neck) {
-      const t = state.clock.elapsedTime;
-      const nod = Math.sin(t * 5.2) * aa * 0.06 + aa * 0.05;
-      const sway = Math.sin(t * 2.1) * 0.02;
-      head.rotation.x = THREE.MathUtils.damp(head.rotation.x, nod, 10, delta);
-      head.rotation.y = THREE.MathUtils.damp(head.rotation.y, sway, 8, delta);
-      neck.rotation.x = THREE.MathUtils.damp(neck.rotation.x, nod * 0.55, 8, delta);
-      neck.rotation.y = THREE.MathUtils.damp(neck.rotation.y, sway * 0.5, 8, delta);
-    }
-
-    // Hard-lock to neutral standing rest pose (prevents arm drift/raised hands).
-    if (rSh) {
-      rSh.rotation.x = 0;
-      rSh.rotation.y = 0;
-      rSh.rotation.z = 0;
-    }
-    if (lSh) {
-      lSh.rotation.x = 0;
-      lSh.rotation.y = 0;
-      lSh.rotation.z = 0;
-    }
-    if (rUA) {
-      rUA.rotation.x = 3;
-      rUA.rotation.y = -1;
-      rUA.rotation.z = -1.5;
-    }
-    if (lUA) {
-      lUA.rotation.x = 3;
-      lUA.rotation.y = 0;
-      lUA.rotation.z = 1.35;
-    }
-    if (rLA) {
-      rLA.rotation.x = 0;
-      rLA.rotation.y = 0;
-      rLA.rotation.z = 0;
-    }
-    if (lLA) {
-      lLA.rotation.x = 0;
-      lLA.rotation.y = 0;
-      lLA.rotation.z = 0;
-    }
-    if (rHand) {
-      rHand.rotation.x = 0;
-      rHand.rotation.y = 0;
-      rHand.rotation.z = 0;
-    }
-    if (lHand) {
-      lHand.rotation.x = 0;
-      lHand.rotation.y = 0;
-      lHand.rotation.z = 0;
-    }
-
+    // Finally, let the VRM internal driver update skeleton/blendshapes.
     vrm.update(delta);
   });
 
   return <group ref={rootRef} position={[0, -1.56, 0]} />;
 }
 
-export default function AvatarInterviewer({ speechLevel, isLiveConnected }: AvatarInterviewerProps) {
+const AvatarInterviewer = forwardRef<AvatarInterviewerHandle, AvatarInterviewerProps>(({ speechLevel, isLiveConnected }, ref) => {
+  // Start the tracking pipeline immediately when this component mounts.
+  const tracking = useMediaPipeTracking();
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+
+  useEffect(() => {
+    tracking.startTracking();
+    return () => { tracking.stopTracking(); };
+  }, [tracking.startTracking, tracking.stopTracking]);
+
+  // Expose an imperative API so parent components can request a webcam snapshot.
+  // `captureWebcamFrame` draws the hidden `<video>` into a `<canvas>` and returns
+  // a base64 JPEG payload (without the data: prefix).
+  useImperativeHandle(ref, () => ({
+    captureWebcamFrame: () => {
+      const video = tracking.videoRef.current;
+      const canvas = canvasRef.current;
+      if (!video || !canvas || video.readyState < 2) return null;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return null;
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      return canvas.toDataURL('image/jpeg', 0.8).split(',')[1];
+    }
+  }));
+
+  // Render a small embedded 3D canvas containing the VRM head. The `tracking.videoRef`
+  // and `canvasRef` remain hidden — they are only used for capture and for the
+  // tracking pipeline; the visible UI is the 3D Canvas and a small status label.
   return (
     <section className="pointer-events-none absolute right-4 top-4 z-20 h-[210px] w-[210px] sm:h-[260px] sm:w-[260px] lg:h-[320px] lg:w-[320px] overflow-hidden rounded-2xl border border-subtle bg-panel/85 shadow-lg">
+      {/* Hidden video/canvas used by MediaPipe and capture API */}
+      <video ref={tracking.videoRef} playsInline muted className="hidden" />
+      <canvas ref={canvasRef} className="hidden" />
+
       <Canvas camera={{ position: [0, 0, 1], fov: 25 }} style={{ background: 'transparent' }}>
         <ambientLight intensity={1.05} />
         <directionalLight position={[2, 4, 3]} intensity={1.2} />
         <directionalLight position={[-2, 1.5, -2]} intensity={0.5} color="#b8c4ff" />
         <Suspense fallback={null}>
-          <VRMHead speechLevel={speechLevel} />
+          {/* VRMHead contains the VRM load + per-frame face/pose ticks */}
+          <VRMHead speechLevel={speechLevel} trackingRef={tracking.trackingRef} />
         </Suspense>
       </Canvas>
 
@@ -146,4 +164,6 @@ export default function AvatarInterviewer({ speechLevel, isLiveConnected }: Avat
       </div>
     </section>
   );
-}
+});
+
+export default AvatarInterviewer;

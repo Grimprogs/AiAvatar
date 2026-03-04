@@ -2,13 +2,13 @@ import React, { useRef, useEffect } from 'react';
 import CodeEditor, { type CodeEditorHandle } from '@/components/CodeEditor';
 import ChatPanel from '@/components/ChatPanel';
 import LiveControls from '@/components/LiveControls';
-import AvatarInterviewer from '@/components/AvatarInterviewer';
+import AvatarInterviewer, { type AvatarInterviewerHandle } from '@/components/AvatarInterviewer';
 import { useTheme } from '@/hooks/useTheme';
 import { useLiveInterview } from '@/hooks/useLiveInterview';
 import { useInterviewSession } from '@/hooks/useInterviewSession';
 import { RefreshCw, Terminal } from 'lucide-react';
 
-const API_KEY = process.env.API_KEY || '';
+const API_KEY = (import.meta as any).env.VITE_API_KEY || '';
 
 /**
  * Root application component.
@@ -17,6 +17,7 @@ const API_KEY = process.env.API_KEY || '';
  */
 const App: React.FC = () => {
   const editorRef = useRef<CodeEditorHandle>(null);
+  const avatarRef = useRef<AvatarInterviewerHandle>(null);
   const { theme, toggleTheme } = useTheme();
 
   const session = useInterviewSession({ apiKey: API_KEY });
@@ -27,6 +28,7 @@ const App: React.FC = () => {
     language: session.language,
     code: session.code,
     editorRef,
+    avatarRef,
     setMessages: session.setMessages,
   });
 
@@ -46,6 +48,7 @@ const App: React.FC = () => {
       <main className="flex-1 flex overflow-hidden">
         <div className="flex-1 flex flex-col relative min-w-0">
           <AvatarInterviewer
+            ref={avatarRef}
             speechLevel={live.speechLevel}
             isLiveConnected={live.isLiveConnected}
           />
