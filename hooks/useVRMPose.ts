@@ -5,8 +5,8 @@ import type { TrackingData } from './useMediaPipeTracking';
 import type { EmotionMode, BehaviorMode } from './useVRMFace';
 
 const lp = THREE.MathUtils.lerp;
-const R_DOWN = 1.3;
-const L_DOWN = -1.3;
+const R_DOWN = -1.25;
+const L_DOWN = 1.25;
 
 export interface UseVRMPoseArgs {
   vrmRef: React.RefObject<VRM | null>;
@@ -52,6 +52,7 @@ export function useVRMPose({
   const yawnTimer = useRef(0);
   const knockTimer = useRef(0);
   const knockCount = useRef(0);
+  const waveAnimPhase = useRef(0);
   const randomLookTimer = useRef(0);
   const randomLookTarget = useRef(new THREE.Vector2(0, 0));
 
@@ -82,6 +83,10 @@ export function useVRMPose({
     const lSh = h.getNormalizedBoneNode(VRMHumanBoneName.LeftShoulder);
     const rHd = h.getNormalizedBoneNode(VRMHumanBoneName.RightHand);
     const lHd = h.getNormalizedBoneNode(VRMHumanBoneName.LeftHand);
+
+    // Keep wrist yaw neutral by default; specific gestures (wave) can override it.
+    if (rHd) rHd.rotation.y = lp(rHd.rotation.y, 0, 0.10);
+    if (lHd) lHd.rotation.y = lp(lHd.rotation.y, 0, 0.10);
 
     // LAYER 1: ORGANIC BREATHING & LEANING
     const breathRate = isSpeaking ? 0.35 : (emotionMode === 'angry' ? 0.45 : 0.25);
@@ -122,9 +127,16 @@ export function useVRMPose({
       prevGiggle.current = tracked && T!.isGiggling;
       if (gigglingT.current >= 0) gigglingT.current += delta;
 
-      // Gesture Timers
-      if (tracked && T && (T.gesture === 'Open_Palm' || T.gesture === 'Victory')) {
-        waveTimer.current = Math.max(waveTimer.current, 2.5); // Ensure it doesn't instantly shrink
+      // Reliable wave trigger: explicit gesture, raised hand, or visible hand while idle.
+      if (
+        tracked && T && (
+          (T.handDetected && T.handRaised) ||
+          T.gesture === 'Open_Palm' ||
+          T.gesture === 'Victory' ||
+          T.gesture === 'Thumb_Up'
+        )
+      ) {
+        waveTimer.current = Math.max(waveTimer.current, 1.2);
       }
 
       if (!isSpeaking && !headReact && waveTimer.current <= 0 && behaviorMode === 'neutral') {
@@ -206,13 +218,7 @@ export function useVRMPose({
           randomLookTimer.current = 3.0 + Math.random() * 5.0; // Change look target every 3-8s
         }
 
-        // Add huge chance of yawning, waving, knocking every few seconds if not speaking/reacting
-        if (Math.random() < 0.0015 && waveTimer.current <= 0 && knockTimer.current <= 0 && yawnTimer.current <= 0) {
-          const r = Math.random();
-          if (r < 0.3) waveTimer.current = 2.5;
-          else if (r < 0.6) yawnTimer.current = 3.5;
-          else { knockTimer.current = 1.8; knockCount.current = 0; }
-        }
+        // Disabled random gesture triggers; wave should be hand-driven for predictability.
 
         const lTargX = randomLookTarget.current.x;
         const lTargY = randomLookTarget.current.y;
@@ -229,27 +235,42 @@ export function useVRMPose({
 
     // Calculate timers
     if (waveTimer.current > 0) waveTimer.current -= delta;
+    else waveAnimPhase.current = 0;
     if (yawnTimer.current > 0) yawnTimer.current -= delta;
     if (knockTimer.current > 0) knockTimer.current -= delta;
 
     if (waveTimer.current > 0) {
-      if (head) { head.rotation.z = lp(head.rotation.z, -0.15, 0.1); } // Tilt head slightly left
-      const wPhase = now * Math.PI * 6; // slightly faster continuous wave speed
+      waveAnimPhase.current += delta;
+      if (head) { head.rotation.z = lp(head.rotation.z, 0.14, 0.12); } // stronger right tilt
+      const wPhase = waveAnimPhase.current * Math.PI * 5; // smooth incrementing wave phase
 
-      // Push shoulder more forward
-      if (rSh) { rSh.rotation.z = lp(rSh.rotation.z, 0.2, 0.15); rSh.rotation.x = lp(rSh.rotation.x, -0.4, 0.15); }
-      if (lSh) { lSh.rotation.z = lp(lSh.rotation.z, 0.1, 0.1); lSh.rotation.x = lp(lSh.rotation.x, 0.1, 0.1); }
+      // Keep waving arm beside face and biased to avatar's right side.
+      if (rSh) { rSh.rotation.z = lp(rSh.rotation.z, 0.03, 0.15); rSh.rotation.x = lp(rSh.rotation.x, -0.10, 0.15); }
+      if (lSh) { lSh.rotation.z = lp(lSh.rotation.z, 0, 0.1); lSh.rotation.x = lp(lSh.rotation.x, 0, 0.1); }
 
-      // Point upper arm forward (-x) and out/up (-z)
-      if (rUA) { rUA.rotation.x = lp(rUA.rotation.x, -1.5, 0.2); rUA.rotation.y = lp(rUA.rotation.y, -0.4, 0.2); rUA.rotation.z = lp(rUA.rotation.z, -1.2, 0.2); }
+      // Upper arm lifted near cheek level using normalized down constants.
+      if (rUA) { rUA.rotation.x = lp(rUA.rotation.x, -0.55, 0.26); rUA.rotation.y = lp(rUA.rotation.y, 0.34, 0.22); rUA.rotation.z = lp(rUA.rotation.z, R_DOWN + 0.26, 0.2); }
       if (lUA) { lUA.rotation.x = lp(lUA.rotation.x, 0, 0.1); lUA.rotation.y = lp(lUA.rotation.y, 0, 0.1); lUA.rotation.z = lp(lUA.rotation.z, L_DOWN, 0.1); }
 
-      // Bend forearm up towards face
-      if (rLA) { rLA.rotation.x = lp(rLA.rotation.x, -1.2, 0.2); rLA.rotation.z = lp(rLA.rotation.z, Math.sin(wPhase) * 0.8 + 0.2, 0.25); }
-      if (lLA) { lLA.rotation.x = lp(lLA.rotation.x, 0, 0.1); }
+      // Forearm/hand do the actual waving with a tighter arc so they stay in-frame.
+      if (rLA) {
+        rLA.rotation.x = lp(rLA.rotation.x, -1.05, 0.22);
+        rLA.rotation.y = lp(rLA.rotation.y, 0.22, 0.24);
+        rLA.rotation.z = lp(rLA.rotation.z, Math.sin(wPhase) * 0.08 + 0.01, 0.25);
+      }
+      if (lLA) { lLA.rotation.x = lp(lLA.rotation.x, 0, 0.1); lLA.rotation.y = lp(lLA.rotation.y, 0, 0.1); lLA.rotation.z = lp(lLA.rotation.z, 0, 0.1); }
 
-      // Hand angle
-      if (rHd) { rHd.rotation.x = lp(rHd.rotation.x, -0.3, 0.2); rHd.rotation.z = lp(rHd.rotation.z, Math.sin(wPhase + 1.5) * 0.5, 0.25); }
+      if (rHd) {
+        // Stronger palm-facing orientation during wave.
+        rHd.rotation.x = lp(rHd.rotation.x, 0.42, 0.24);
+        rHd.rotation.y = lp(rHd.rotation.y, 1.12, 0.24);
+        rHd.rotation.z = lp(rHd.rotation.z, Math.sin(wPhase + 1.5) * 0.08, 0.25);
+      }
+      if (lHd) {
+        lHd.rotation.x = lp(lHd.rotation.x, 0, 0.1);
+        lHd.rotation.y = lp(lHd.rotation.y, 0, 0.1);
+        lHd.rotation.z = lp(lHd.rotation.z, 0, 0.1);
+      }
     } else if (yawnTimer.current > 0) {
       if (rSh) { rSh.rotation.z = lp(rSh.rotation.z, -0.1, 0.1); rSh.rotation.x = lp(rSh.rotation.x, 0.2, 0.1); }
       if (lSh) { lSh.rotation.z = lp(lSh.rotation.z, 0.1, 0.1); lSh.rotation.x = lp(lSh.rotation.x, 0.2, 0.1); }
@@ -318,27 +339,28 @@ export function useVRMPose({
       const wave1 = Math.sin(now * 1.5) * 0.2;
       const wave2 = Math.cos(now * 1.8) * 0.2;
 
-      if (rSh) { rSh.rotation.z = lp(rSh.rotation.z, 0.05, 0.06); rSh.rotation.x = lp(rSh.rotation.x, -0.1, 0.06); }
-      if (lSh) { lSh.rotation.z = lp(lSh.rotation.z, -0.05, 0.06); lSh.rotation.x = lp(lSh.rotation.x, -0.1, 0.06); }
+      if (rSh) { rSh.rotation.z = lp(rSh.rotation.z, 0.05, 0.06); rSh.rotation.x = lp(rSh.rotation.x, -0.05, 0.06); }
+      if (lSh) { lSh.rotation.z = lp(lSh.rotation.z, -0.05, 0.06); lSh.rotation.x = lp(lSh.rotation.x, -0.05, 0.06); }
 
-      // Raise arms up instead of down (z closer to 0.5 instead of 1.3)
+      // Speaking motion: keep both arms near neutral and avoid overhead poses.
       if (rUA) {
-        rUA.rotation.x = lp(rUA.rotation.x, -0.6 * intensity + wave1, 0.10);
-        rUA.rotation.y = lp(rUA.rotation.y, -0.3, 0.10);
-        rUA.rotation.z = lp(rUA.rotation.z, 0.5 - 0.22 * intensity, 0.10);
+        rUA.rotation.x = lp(rUA.rotation.x, -0.08 + wave1 * 0.14, 0.10);
+        rUA.rotation.y = lp(rUA.rotation.y, 0.08, 0.10);
+        rUA.rotation.z = lp(rUA.rotation.z, R_DOWN + 0.05 + b1 * 0.03, 0.10);
       }
+      // Mild elbow movement while speaking.
       if (rLA) {
-        rLA.rotation.x = lp(rLA.rotation.x, -1.0 + b1, 0.13);
-        rLA.rotation.z = lp(rLA.rotation.z, 0.2 + wave1, 0.13);
+        rLA.rotation.x = lp(rLA.rotation.x, -0.28 + b1 * 0.12, 0.13);
+        rLA.rotation.z = lp(rLA.rotation.z, 0.05 + wave1 * 0.12, 0.13);
       }
       if (lUA) {
-        lUA.rotation.x = lp(lUA.rotation.x, -0.5 * intensity + wave2, 0.09);
-        lUA.rotation.y = lp(lUA.rotation.y, 0.3, 0.09);
-        lUA.rotation.z = lp(lUA.rotation.z, -0.5 + 0.16 * intensity, 0.09);
+        lUA.rotation.x = lp(lUA.rotation.x, -0.08 + wave2 * 0.14, 0.09);
+        lUA.rotation.y = lp(lUA.rotation.y, -0.08, 0.09);
+        lUA.rotation.z = lp(lUA.rotation.z, L_DOWN - 0.05 - b2 * 0.03, 0.09);
       }
       if (lLA) {
-        lLA.rotation.x = lp(lLA.rotation.x, -0.9 + b2, 0.11);
-        lLA.rotation.z = lp(lLA.rotation.z, -0.2 + wave2, 0.11);
+        lLA.rotation.x = lp(lLA.rotation.x, -0.28 + b2 * 0.12, 0.11);
+        lLA.rotation.z = lp(lLA.rotation.z, -0.05 + wave2 * 0.12, 0.11);
       }
       if (rHd) { rHd.rotation.x = lp(rHd.rotation.x, -0.2, 0.08); rHd.rotation.z = lp(rHd.rotation.z, b1 * 0.4, 0.08); }
       if (lHd) { lHd.rotation.x = lp(lHd.rotation.x, -0.2, 0.08); lHd.rotation.z = lp(lHd.rotation.z, b2 * 0.4, 0.08); }
@@ -353,9 +375,9 @@ export function useVRMPose({
     } else {
       if (rSh) { rSh.rotation.z = lp(rSh.rotation.z, 0, 0.05); rSh.rotation.x = lp(rSh.rotation.x, 0, 0.05); }
       if (lSh) { lSh.rotation.z = lp(lSh.rotation.z, 0, 0.05); lSh.rotation.x = lp(lSh.rotation.x, 0, 0.05); }
-      if (rUA) { rUA.rotation.x = lp(rUA.rotation.x, 0, 0.05); rUA.rotation.y = lp(rUA.rotation.y, 0, 0.05); rUA.rotation.z = lp(rUA.rotation.z, 1.3, 0.05); }
+      if (rUA) { rUA.rotation.x = lp(rUA.rotation.x, 0, 0.05); rUA.rotation.y = lp(rUA.rotation.y, 0, 0.05); rUA.rotation.z = lp(rUA.rotation.z, R_DOWN, 0.05); }
       if (rLA) { rLA.rotation.x = lp(rLA.rotation.x, 0, 0.05); rLA.rotation.z = lp(rLA.rotation.z, 0, 0.05); }
-      if (lUA) { lUA.rotation.x = lp(lUA.rotation.x, 0, 0.05); lUA.rotation.y = lp(lUA.rotation.y, 0, 0.05); lUA.rotation.z = lp(lUA.rotation.z, -1.3, 0.05); }
+      if (lUA) { lUA.rotation.x = lp(lUA.rotation.x, 0, 0.05); lUA.rotation.y = lp(lUA.rotation.y, 0, 0.05); lUA.rotation.z = lp(lUA.rotation.z, L_DOWN, 0.05); }
       if (lLA) { lLA.rotation.x = lp(lLA.rotation.x, 0, 0.05); lLA.rotation.z = lp(lLA.rotation.z, 0, 0.05); }
       if (rHd) { rHd.rotation.x = lp(rHd.rotation.x, 0, 0.05); rHd.rotation.z = lp(rHd.rotation.z, 0, 0.05); }
     }

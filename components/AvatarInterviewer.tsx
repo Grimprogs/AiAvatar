@@ -117,6 +117,7 @@ const AvatarInterviewer = forwardRef<AvatarInterviewerHandle, AvatarInterviewerP
   // Start the tracking pipeline immediately when this component mounts.
   const tracking = useMediaPipeTracking();
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const webcamDotsRef = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
     tracking.startTracking();
@@ -140,16 +141,81 @@ const AvatarInterviewer = forwardRef<AvatarInterviewerHandle, AvatarInterviewerP
     }
   }));
 
+  useEffect(() => {
+    let rafId = 0;
+
+    const drawDots = () => {
+      const video = tracking.videoRef.current;
+      const dotsCanvas = webcamDotsRef.current;
+      if (video && dotsCanvas) {
+        const w = dotsCanvas.clientWidth;
+        const h = dotsCanvas.clientHeight;
+        if (w > 0 && h > 0) {
+          if (dotsCanvas.width !== w || dotsCanvas.height !== h) {
+            dotsCanvas.width = w;
+            dotsCanvas.height = h;
+          }
+
+          const ctx = dotsCanvas.getContext('2d');
+          if (ctx) {
+            ctx.clearRect(0, 0, w, h);
+            const facePoints = tracking.trackingRef.current.facePoints;
+            if (facePoints.length > 0) {
+              ctx.fillStyle = '#22c55e';
+              for (let i = 0; i < facePoints.length; i++) {
+                const p = facePoints[i];
+                ctx.beginPath();
+                ctx.arc(p.x * w, p.y * h, 1.8, 0, Math.PI * 2);
+                ctx.fill();
+              }
+            }
+
+            const handPoints = tracking.trackingRef.current.handPoints;
+            if (handPoints.length > 0) {
+              ctx.fillStyle = tracking.trackingRef.current.handRaised ? '#facc15' : '#38bdf8';
+              for (let i = 0; i < handPoints.length; i++) {
+                const hp = handPoints[i];
+                ctx.beginPath();
+                ctx.arc(hp.x * w, hp.y * h, 2.3, 0, Math.PI * 2);
+                ctx.fill();
+              }
+            }
+          }
+        }
+      }
+
+      rafId = requestAnimationFrame(drawDots);
+    };
+
+    rafId = requestAnimationFrame(drawDots);
+    return () => cancelAnimationFrame(rafId);
+  }, [tracking.videoRef, tracking.trackingRef]);
+
   // Render a small embedded 3D canvas containing the VRM head. The `tracking.videoRef`
   // and `canvasRef` remain hidden — they are only used for capture and for the
   // tracking pipeline; the visible UI is the 3D Canvas and a small status label.
   return (
     <section className="pointer-events-none absolute right-4 top-4 z-20 h-[210px] w-[210px] sm:h-[260px] sm:w-[260px] lg:h-[320px] lg:w-[320px] overflow-hidden rounded-2xl border border-subtle bg-panel/85 shadow-lg">
-      {/* Hidden video/canvas used by MediaPipe and capture API */}
-      <video ref={tracking.videoRef} playsInline muted className="hidden" />
+      {/* Hidden canvas used by MediaPipe and capture API */}
       <canvas ref={canvasRef} className="hidden" />
 
-      <Canvas camera={{ position: [0, 0, 1], fov: 25 }} style={{ background: 'transparent' }}>
+      {/* Webcam preview with landmark dots so user can see live tracking */}
+      <div className="fixed top-4 right-4 z-[9999] w-48 h-auto rounded-xl border border-white/20 shadow-lg overflow-hidden">
+        <video
+          ref={tracking.videoRef}
+          playsInline
+          muted
+          className="w-full h-auto"
+          style={{ transform: 'scaleX(-1)' }}
+        />
+        <canvas
+          ref={webcamDotsRef}
+          className="absolute inset-0 w-full h-full pointer-events-none"
+          style={{ transform: 'scaleX(-1)' }}
+        />
+      </div>
+
+      <Canvas camera={{ position: [0, 0.02, 1.02], fov: 27 }} style={{ background: 'transparent' }}>
         <ambientLight intensity={1.05} />
         <directionalLight position={[2, 4, 3]} intensity={1.2} />
         <directionalLight position={[-2, 1.5, -2]} intensity={0.5} color="#b8c4ff" />

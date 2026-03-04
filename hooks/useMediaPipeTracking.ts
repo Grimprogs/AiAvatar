@@ -23,6 +23,8 @@ import * as THREE from 'three';
 // ─── public data contract ─────────────────────────────────────────────────────
 export interface TrackingData {
   active: boolean;
+  facePoints: Array<{ x: number; y: number }>;
+  handPoints: Array<{ x: number; y: number }>;
 
   // ── Head pose (radians, VRM-normalized space) ────────────────────────────
   headPitch: number;   // nod   +forward / -backward
@@ -43,6 +45,8 @@ export interface TrackingData {
   handToMouth: boolean;  // user's hand is near their own mouth
   isGiggling: boolean;  // handToMouth + happy expression simultaneously
   gesture: string;   // categoryName from GestureRecognizer (e.g. 'Open_Palm')
+  handDetected: boolean;
+  handRaised: boolean;
 
   // ── Motion / idle detection ──────────────────────────────────────────────
   motionEnergy: number;   // rolling RMS of landmark delta (0 = perfectly still)
@@ -51,11 +55,14 @@ export interface TrackingData {
 
 export const DEFAULT_TRACKING: TrackingData = {
   active: false,
+  facePoints: [],
+  handPoints: [],
   headPitch: 0, headYaw: 0, headRoll: 0,
   eyeBlinkLeft: 0, eyeBlinkRight: 0,
   mouthSmile: 0, jawOpen: 0, mouthFunnel: 0, mouthPucker: 0,
   browInnerUp: 0, cheekPuff: 0,
   handToMouth: false, isGiggling: false, gesture: 'None',
+  handDetected: false, handRaised: false,
   motionEnergy: 0, isBored: false,
 };
 
@@ -213,6 +220,13 @@ export function useMediaPipeTracking() {
       if (faceResult?.faceLandmarks?.length) {
         const lms = faceResult.faceLandmarks[0];
 
+        // Keep a decimated set of face landmarks for lightweight preview overlay.
+        const points: Array<{ x: number; y: number }> = [];
+        for (let i = 0; i < lms.length; i += 3) {
+          points.push({ x: lms[i].x, y: lms[i].y });
+        }
+        T.facePoints = points;
+
         // ── Head pose from 4×4 facial transformation matrix ─────────────
         const mats = faceResult.facialTransformationMatrixes;
         if (mats?.length) {
@@ -225,10 +239,10 @@ export function useMediaPipeTracking() {
             m[3], m[7], m[11], m[15],
           );
           const euler = new THREE.Euler().setFromRotationMatrix(mat4, 'YXZ');
-          // Mirror yaw so avatar mirrors the user's movement
-          T.headPitch = lp(T.headPitch, cl(euler.x, -0.50, 0.50), 0.25);
-          T.headYaw = lp(T.headYaw, cl(-euler.y, -0.60, 0.60), 0.25);
-          T.headRoll = lp(T.headRoll, cl(-euler.z, -0.35, 0.35), 0.25);
+          // Track the user: invert angles so the avatar *looks at* the user's face instead of copying it
+          T.headPitch = lp(T.headPitch, cl(-euler.x, -0.50, 0.50), 0.25);
+          T.headYaw = lp(T.headYaw, cl(euler.y, -0.60, 0.60), 0.25);
+          T.headRoll = lp(T.headRoll, cl(euler.z, -0.35, 0.35), 0.25);
         }
 
         // ── Blendshapes ──────────────────────────────────────────────────
@@ -277,20 +291,46 @@ export function useMediaPipeTracking() {
 
         let handToMouth = false;
         let activeGesture = 'None';
+        let handDetected = false;
+        let handRaised = false;
+        const handPoints: Array<{ x: number; y: number }> = [];
         if (gestResult?.landmarks?.length) {
+          const hand = gestResult.landmarks[0];
+          handDetected = true;
+
+          // Keep hand landmarks for webcam overlay debugging.
+          for (let i = 0; i < hand.length; i++) {
+            handPoints.push({ x: hand[i].x, y: hand[i].y });
+          }
+
           // Use index fingertip (landmark 8) as the hand reference point
-          const tip = gestResult.landmarks[0][8];
+          const tip = hand[8];
+          const wrist = hand[0];
+          const indexMcp = hand[5];
           const dist = Math.hypot(tip.x - mouthLm.x, tip.y - mouthLm.y);
           handToMouth = dist < H2M_DIST;
 
-          if (gestResult.gestures?.length && gestResult.gestures[0]?.length) {
+          const noseY = lms[1]?.y ?? 0.45;
+          const foreheadY = lms[10]?.y ?? (noseY - 0.08);
+          handRaised =
+            wrist.y < (noseY + 0.12) ||
+            tip.y < (noseY + 0.10) ||
+            indexMcp.y < (foreheadY + 0.12);
+
+          if (gestResult.gestures?.length && gestResult.gestures[0]?.length > 0) {
             activeGesture = gestResult.gestures[0][0].categoryName;
+            if (activeGesture === 'Open_Palm' || activeGesture === 'Victory' || activeGesture === 'Thumb_Up') {
+              handRaised = true;
+            }
           }
         }
 
         T.handToMouth = handToMouth;
         T.isGiggling = handToMouth && T.mouthSmile > 0.45;
         T.gesture = activeGesture;
+        T.handDetected = handDetected;
+        T.handRaised = handRaised;
+        T.handPoints = handPoints;
 
       } else {
         // No face in frame — decay all values back toward resting
@@ -303,6 +343,10 @@ export function useMediaPipeTracking() {
         T.handToMouth = false;
         T.isGiggling = false;
         T.gesture = 'None';
+        T.handDetected = false;
+        T.handRaised = false;
+        T.handPoints = [];
+        T.facePoints = [];
       }
     };
 
