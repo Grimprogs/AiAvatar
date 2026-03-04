@@ -49,6 +49,11 @@ export function useVRMPose({
   const waveTimer = useRef(0);
   const foldedHandsTimer = useRef(0);
   const spineLean = useRef(0);
+  const yawnTimer = useRef(0);
+  const knockTimer = useRef(0);
+  const knockCount = useRef(0);
+  const randomLookTimer = useRef(0);
+  const randomLookTarget = useRef(new THREE.Vector2(0, 0));
 
   const tick = (
     delta: number,
@@ -76,6 +81,7 @@ export function useVRMPose({
     const rSh = h.getNormalizedBoneNode(VRMHumanBoneName.RightShoulder);
     const lSh = h.getNormalizedBoneNode(VRMHumanBoneName.LeftShoulder);
     const rHd = h.getNormalizedBoneNode(VRMHumanBoneName.RightHand);
+    const lHd = h.getNormalizedBoneNode(VRMHumanBoneName.LeftHand);
 
     // LAYER 1: ORGANIC BREATHING & LEANING
     const breathRate = isSpeaking ? 0.35 : (emotionMode === 'angry' ? 0.45 : 0.25);
@@ -117,7 +123,7 @@ export function useVRMPose({
       if (gigglingT.current >= 0) gigglingT.current += delta;
 
       // Gesture Timers
-      if (tracked && T && T.gesture === 'Open_Palm') waveTimer.current = 2.5; // Trigger wave
+      if (tracked && T && (T.gesture === 'Open_Palm' || T.gesture === 'Victory')) waveTimer.current = 2.5; // Trigger/extend wave
       if (waveTimer.current > 0) waveTimer.current -= delta;
 
       if (!isSpeaking && !headReact && waveTimer.current <= 0 && behaviorMode === 'neutral') {
@@ -138,6 +144,15 @@ export function useVRMPose({
         const gig = gigglingT.current; const bounce = Math.sin(gig * Math.PI * 8.0) * 0.06;
         neck.rotation.x = lp(neck.rotation.x, T.headPitch * 0.5, 0.10); neck.rotation.y = lp(neck.rotation.y, T.headYaw * 0.4, 0.10); neck.rotation.z = lp(neck.rotation.z, T.headRoll * 0.4, 0.10);
         head.rotation.x = lp(head.rotation.x, T.headPitch * 0.5 + bounce, 0.15); head.rotation.y = lp(head.rotation.y, T.headYaw * 0.6, 0.12); head.rotation.z = lp(head.rotation.z, T.headRoll * 0.6 + 0.15 + Math.sin(gig * 5.0) * 0.04, 0.12);
+      } else if (yawnTimer.current > 0) {
+        // Look up slightly when yawning
+        neck.rotation.x = lp(neck.rotation.x, -0.2, 0.05);
+        head.rotation.x = lp(head.rotation.x, -0.3, 0.05);
+      } else if (knockTimer.current > 0) {
+        // Lean in as if looking through the screen while knocking
+        neck.rotation.x = lp(neck.rotation.x, 0.3, 0.1);
+        head.rotation.x = lp(head.rotation.x, -0.1, 0.1);
+        head.rotation.y = lp(head.rotation.y, 0, 0.1);
       } else if (behaviorMode === 'loudLaugh') {
         jitP.current += delta * 1.5;
         neck.rotation.x = lp(neck.rotation.x, -0.32, 0.10); neck.rotation.z = lp(neck.rotation.z, 0.0, 0.08);
@@ -182,20 +197,78 @@ export function useVRMPose({
         jitP.current = 0; const spk = Math.sin(now * 3.5) * curAa * 0.04; neck.rotation.x = lp(neck.rotation.x, -curAa * 0.04, 0.06); neck.rotation.z = lp(neck.rotation.z, 0, 0.06); head.rotation.x = lp(head.rotation.x, -curAa * 0.06 + spk, 0.08); head.rotation.y = lp(head.rotation.y, 0, 0.06); head.rotation.z = lp(head.rotation.z, 0, 0.06);
       } else {
         jitP.current = 0; const s = swP.current; const amp = 0.012; const brth = Math.sin(now * 1.57) * 0.004;
-        neck.rotation.x = lp(neck.rotation.x, Math.sin(s * 0.53) * amp + brth, 0.025); neck.rotation.z = lp(neck.rotation.z, Math.sin(s * 0.37) * amp * 0.5, 0.025); head.rotation.x = lp(head.rotation.x, Math.sin(s * 0.61) * amp * 1.2 - brth * 0.5, 0.030); head.rotation.y = lp(head.rotation.y, Math.sin(s * 0.44) * amp * 0.7, 0.030); head.rotation.z = lp(head.rotation.z, Math.sin(s) * amp * 0.35, 0.030);
+
+        // Random looking around
+        randomLookTimer.current -= delta;
+        if (randomLookTimer.current <= 0) {
+          randomLookTarget.current.set((Math.random() - 0.5) * 0.8, (Math.random() - 0.5) * 0.4);
+          randomLookTimer.current = 3.0 + Math.random() * 5.0; // Change look target every 3-8s
+        }
+
+        // Add huge chance of yawning, waving, knocking every few seconds if not speaking/reacting
+        if (Math.random() < 0.0015 && waveTimer.current <= 0 && knockTimer.current <= 0 && yawnTimer.current <= 0) {
+          const r = Math.random();
+          if (r < 0.3) waveTimer.current = 2.5;
+          else if (r < 0.6) yawnTimer.current = 3.5;
+          else { knockTimer.current = 1.8; knockCount.current = 0; }
+        }
+
+        const lTargX = randomLookTarget.current.x;
+        const lTargY = randomLookTarget.current.y;
+
+        neck.rotation.x = lp(neck.rotation.x, Math.sin(s * 0.53) * amp + brth + lTargY * 0.3, 0.04);
+        neck.rotation.z = lp(neck.rotation.z, Math.sin(s * 0.37) * amp * 0.5, 0.025);
+        neck.rotation.y = lp(neck.rotation.y, lTargX * 0.4, 0.05);
+
+        head.rotation.x = lp(head.rotation.x, Math.sin(s * 0.61) * amp * 1.2 - brth * 0.5 + lTargY * 0.7, 0.05);
+        head.rotation.y = lp(head.rotation.y, Math.sin(s * 0.44) * amp * 0.7 + lTargX * 0.6, 0.05);
+        head.rotation.z = lp(head.rotation.z, Math.sin(s) * amp * 0.35, 0.030);
       }
     }
 
+    // Calculate timers
+    if (yawnTimer.current > 0) yawnTimer.current -= delta;
+    if (knockTimer.current > 0) knockTimer.current -= delta;
+
     if (waveTimer.current > 0) {
       if (head) { head.rotation.z = lp(head.rotation.z, -0.25, 0.1); } // Tilt head left
-      const wPhase = waveTimer.current * Math.PI * 5; // wave speed
-      if (rSh) { rSh.rotation.z = lp(rSh.rotation.z, 0.4, 0.15); rSh.rotation.x = lp(rSh.rotation.x, -0.2, 0.15); }
+      const wPhase = now * Math.PI * 6; // slightly faster continuous wave speed
+      if (rSh) { rSh.rotation.z = lp(rSh.rotation.z, 0.5, 0.15); rSh.rotation.x = lp(rSh.rotation.x, -0.3, 0.15); }
       if (lSh) { lSh.rotation.z = lp(lSh.rotation.z, 0.1, 0.1); lSh.rotation.x = lp(lSh.rotation.x, 0.1, 0.1); }
-      if (rUA) { rUA.rotation.x = lp(rUA.rotation.x, 0.1, 0.2); rUA.rotation.y = lp(rUA.rotation.y, -0.3, 0.2); rUA.rotation.z = lp(rUA.rotation.z, -1.6, 0.2); }
+      // High raised hand for waving
+      if (rUA) { rUA.rotation.x = lp(rUA.rotation.x, -0.5, 0.2); rUA.rotation.y = lp(rUA.rotation.y, -0.2, 0.2); rUA.rotation.z = lp(rUA.rotation.z, -2.1, 0.2); }
       if (lUA) { lUA.rotation.x = lp(lUA.rotation.x, 0, 0.1); lUA.rotation.y = lp(lUA.rotation.y, 0, 0.1); lUA.rotation.z = lp(lUA.rotation.z, L_DOWN, 0.1); }
-      if (rLA) { rLA.rotation.x = lp(rLA.rotation.x, -1.2, 0.2); rLA.rotation.z = lp(rLA.rotation.z, Math.sin(wPhase) * 0.5 - 0.5, 0.25); }
+      // Waving forearm
+      if (rLA) { rLA.rotation.x = lp(rLA.rotation.x, -0.8, 0.2); rLA.rotation.z = lp(rLA.rotation.z, Math.sin(wPhase) * 0.8 - 0.2, 0.25); }
       if (lLA) { lLA.rotation.x = lp(lLA.rotation.x, 0, 0.1); }
-      if (rHd) { rHd.rotation.x = lp(rHd.rotation.x, 0, 0.2); rHd.rotation.z = lp(rHd.rotation.z, Math.sin(wPhase + 1) * 0.4, 0.25); }
+      if (rHd) { rHd.rotation.x = lp(rHd.rotation.x, -0.1, 0.2); rHd.rotation.z = lp(rHd.rotation.z, Math.sin(wPhase + 1.5) * 0.5, 0.25); }
+    } else if (yawnTimer.current > 0) {
+      if (rSh) { rSh.rotation.z = lp(rSh.rotation.z, -0.1, 0.1); rSh.rotation.x = lp(rSh.rotation.x, 0.2, 0.1); }
+      if (lSh) { lSh.rotation.z = lp(lSh.rotation.z, 0.1, 0.1); lSh.rotation.x = lp(lSh.rotation.x, 0.2, 0.1); }
+      // Bring hands to mouth to yawn
+      if (rUA) { rUA.rotation.x = lp(rUA.rotation.x, -1.0, 0.08); rUA.rotation.z = lp(rUA.rotation.z, -0.4, 0.08); }
+      if (lUA) { lUA.rotation.x = lp(lUA.rotation.x, -1.0, 0.08); lUA.rotation.z = lp(lUA.rotation.z, 0.4, 0.08); }
+      if (rLA) { rLA.rotation.x = lp(rLA.rotation.x, -1.8, 0.1); }
+      if (lLA) { lLA.rotation.x = lp(lLA.rotation.x, -1.8, 0.1); }
+      if (rHd) { rHd.rotation.x = lp(rHd.rotation.x, 0.5, 0.1); }
+      if (lHd) { lHd.rotation.x = lp(lHd.rotation.x, 0.5, 0.1); }
+    } else if (knockTimer.current > 0) {
+      // Screen knocking!
+      // Make them raise right hand to knock on the camera glass
+      const knockFreq = Math.sin(knockTimer.current * Math.PI * 10);
+
+      if (rSh) { rSh.rotation.z = lp(rSh.rotation.z, 0.2, 0.1); rSh.rotation.x = lp(rSh.rotation.x, -0.1, 0.1); }
+      if (lSh) { lSh.rotation.z = lp(lSh.rotation.z, 0, 0.1); lSh.rotation.x = lp(lSh.rotation.x, 0, 0.1); }
+
+      // Arm up, hand slightly in front of face
+      if (rUA) { rUA.rotation.x = lp(rUA.rotation.x, -1.0, 0.2); rUA.rotation.z = lp(rUA.rotation.z, -0.5, 0.2); }
+      if (lUA) { lUA.rotation.z = lp(lUA.rotation.z, L_DOWN, 0.2); }
+
+      // Repeatedly knock forward against invisible glass (Z axis)
+      if (rLA) { rLA.rotation.x = lp(rLA.rotation.x, -1.5, 0.2); rLA.rotation.z = lp(rLA.rotation.z, knockFreq > 0.5 ? 0.3 : -0.1, 0.3); }
+
+      // Fist shape for hand? We can't strictly modify finger bones easily without adding them, but we tilt hand down.
+      if (rHd) { rHd.rotation.x = lp(rHd.rotation.x, -0.5, 0.3); }
     } else if ((tracked && T && (T.handToMouth || T.isGiggling)) || behaviorMode === 'shyGiggle') {
       if (rSh) { rSh.rotation.z = lp(rSh.rotation.z, -0.10, 0.10); rSh.rotation.x = lp(rSh.rotation.x, 0.05, 0.10); }
       if (rUA) { rUA.rotation.x = lp(rUA.rotation.x, -1.50, 0.14); rUA.rotation.z = lp(rUA.rotation.z, -0.55, 0.14); }
@@ -231,15 +304,36 @@ export function useVRMPose({
       if (rHd) { rHd.rotation.x = lp(rHd.rotation.x, 0, 0.05); rHd.rotation.z = lp(rHd.rotation.z, 0, 0.05); }
     } else if (isSpeaking) {
       const intensity = emotionMode === 'angry' ? 1.4 : emotionMode === 'happy' ? 1.2 : 1.0;
-      const b1 = Math.sin(now * 3.2) * 0.14 * intensity;
-      const b2 = Math.sin(now * 3.2 + Math.PI * .5) * 0.11 * intensity;
-      if (rSh) { rSh.rotation.z = lp(rSh.rotation.z, 0, 0.06); rSh.rotation.x = lp(rSh.rotation.x, 0, 0.06); }
-      if (lSh) { lSh.rotation.z = lp(lSh.rotation.z, 0, 0.06); lSh.rotation.x = lp(lSh.rotation.x, 0, 0.06); }
-      if (rUA) { rUA.rotation.x = lp(rUA.rotation.x, -0.45 * intensity, 0.10); rUA.rotation.y = lp(rUA.rotation.y, 0, 0.10); rUA.rotation.z = lp(rUA.rotation.z, 1.3 - 0.22 * intensity, 0.10); }
-      if (rLA) { rLA.rotation.x = lp(rLA.rotation.x, -0.30 + b1, 0.13); }
-      if (lUA) { lUA.rotation.x = lp(lUA.rotation.x, -0.28 * intensity, 0.09); lUA.rotation.y = lp(lUA.rotation.y, 0, 0.09); lUA.rotation.z = lp(lUA.rotation.z, -1.3 + 0.16 * intensity, 0.09); }
-      if (lLA) { lLA.rotation.x = lp(lLA.rotation.x, -0.18 + b2, 0.11); }
-      if (rHd) { rHd.rotation.x = lp(rHd.rotation.x, 0, 0.08); rHd.rotation.z = lp(rHd.rotation.z, 0, 0.08); }
+      // Make it more expressive for children: wider, more frequent hand movements
+      const b1 = Math.sin(now * 3.8) * 0.35 * intensity;
+      const b2 = Math.sin(now * 3.8 + Math.PI * .5) * 0.35 * intensity;
+      const wave1 = Math.sin(now * 1.5) * 0.2;
+      const wave2 = Math.cos(now * 1.8) * 0.2;
+
+      if (rSh) { rSh.rotation.z = lp(rSh.rotation.z, 0.05, 0.06); rSh.rotation.x = lp(rSh.rotation.x, -0.1, 0.06); }
+      if (lSh) { lSh.rotation.z = lp(lSh.rotation.z, -0.05, 0.06); lSh.rotation.x = lp(lSh.rotation.x, -0.1, 0.06); }
+
+      // Raise arms up instead of down (z closer to 0.5 instead of 1.3)
+      if (rUA) {
+        rUA.rotation.x = lp(rUA.rotation.x, -0.6 * intensity + wave1, 0.10);
+        rUA.rotation.y = lp(rUA.rotation.y, -0.3, 0.10);
+        rUA.rotation.z = lp(rUA.rotation.z, 0.5 - 0.22 * intensity, 0.10);
+      }
+      if (rLA) {
+        rLA.rotation.x = lp(rLA.rotation.x, -1.0 + b1, 0.13);
+        rLA.rotation.z = lp(rLA.rotation.z, 0.2 + wave1, 0.13);
+      }
+      if (lUA) {
+        lUA.rotation.x = lp(lUA.rotation.x, -0.5 * intensity + wave2, 0.09);
+        lUA.rotation.y = lp(lUA.rotation.y, 0.3, 0.09);
+        lUA.rotation.z = lp(lUA.rotation.z, -0.5 + 0.16 * intensity, 0.09);
+      }
+      if (lLA) {
+        lLA.rotation.x = lp(lLA.rotation.x, -0.9 + b2, 0.11);
+        lLA.rotation.z = lp(lLA.rotation.z, -0.2 + wave2, 0.11);
+      }
+      if (rHd) { rHd.rotation.x = lp(rHd.rotation.x, -0.2, 0.08); rHd.rotation.z = lp(rHd.rotation.z, b1 * 0.4, 0.08); }
+      if (lHd) { lHd.rotation.x = lp(lHd.rotation.x, -0.2, 0.08); lHd.rotation.z = lp(lHd.rotation.z, b2 * 0.4, 0.08); }
     } else if (foldedHandsTimer.current > 0) {
       if (rSh) { rSh.rotation.z = lp(rSh.rotation.z, 0.1, 0.05); rSh.rotation.x = lp(rSh.rotation.x, -0.1, 0.05); }
       if (lSh) { lSh.rotation.z = lp(lSh.rotation.z, -0.1, 0.05); lSh.rotation.x = lp(lSh.rotation.x, -0.1, 0.05); }
@@ -264,6 +358,10 @@ export function useVRMPose({
         head.position.x = Math.sin(now * 22.0) * vA;
         head.position.y = Math.sin(now * 30.1) * vA * 0.60;
         head.position.z = Math.sin(now * 17.3) * vA * 0.50;
+      } else if (knockTimer.current > 0) {
+        // Bring face much closer to the camera when knocking!
+        head.position.z = lp(head.position.z, 0.35, 0.1);
+        head.position.y = lp(head.position.y, -0.05, 0.1);
       } else {
         head.position.x = lp(head.position.x, 0, 0.30);
         head.position.y = lp(head.position.y, 0, 0.30);

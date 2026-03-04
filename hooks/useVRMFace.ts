@@ -5,7 +5,7 @@ import type { TrackingData } from './useMediaPipeTracking';
 
 export type EmotionMode = 'neutral' | 'angry' | 'happy' | 'sad';
 export type BehaviorMode = 'neutral' | 'loudLaugh' | 'shyGiggle' | 'guilty' | 'angry' | 'blush';
-type EK = 'aa' | 'ee' | 'ih' | 'oh' | 'ou' | 'blink' | 'angry' | 'happy' | 'sad' | 'relaxed' | 'surprised';
+type EK = 'aa' | 'ee' | 'ih' | 'oh' | 'ou' | 'blink' | 'angry' | 'happy' | 'sad' | 'relaxed' | 'surprised' | 'cheekPuff';
 
 const SILENCE_RMS = 0.015;
 const SHOUT_RMS = 0.10;
@@ -23,7 +23,7 @@ interface EmotionProfile {
 
 const EMOTION_PROFILES: Record<EmotionMode, EmotionProfile> = {
   neutral: { lipMult: 1.0, viseme: { aa: 1.0, ee: 0.80, ih: 0.80, oh: 1.00, ou: 1.00 }, secondary: { relaxed: 0.25 }, headReactThreshold: SHOUT_RMS },
-  angry: { lipMult: 1.35, viseme: { aa: 1.20, ee: 1.50, ih: 1.60, oh: 0.60, ou: 0.40 }, secondary: { angry: 0.90 }, alphaOverride: { aa: 0.40, ee: 0.35, ih: 0.38 }, headReactThreshold: SHOUT_RMS * 0.6 },
+  angry: { lipMult: 1.35, viseme: { aa: 1.20, ee: 1.50, ih: 1.60, oh: 0.60, ou: 0.40 }, secondary: { angry: 0.90, cheekPuff: 0.8 }, alphaOverride: { aa: 0.40, ee: 0.35, ih: 0.38 }, headReactThreshold: SHOUT_RMS * 0.6 },
   happy: { lipMult: 1.10, viseme: { aa: 1.30, ee: 1.40, ih: 0.80, oh: 0.80, ou: 0.60 }, secondary: { happy: 0.75, relaxed: 0.20 }, headReactThreshold: SHOUT_RMS * 1.5 },
   sad: { lipMult: 0.60, viseme: { aa: 0.60, ee: 0.40, ih: 0.40, oh: 1.20, ou: 1.40 }, secondary: { sad: 0.80, relaxed: 0.10 }, alphaOverride: { aa: 0.14, oh: 0.18, ou: 0.16 }, headReactThreshold: 9999 },
 };
@@ -65,7 +65,7 @@ export function useVRMFace({
   const sRms = useRef(0);
 
   const curExpr = useRef<Record<EK, number>>({
-    aa: 0, ee: 0, ih: 0, oh: 0, ou: 0, blink: 0, angry: 0, happy: 0, sad: 0, relaxed: 0, surprised: 0,
+    aa: 0, ee: 0, ih: 0, oh: 0, ou: 0, blink: 0, angry: 0, happy: 0, sad: 0, relaxed: 0, surprised: 0, cheekPuff: 0
   });
 
   const nextBlink = useRef(0);
@@ -88,7 +88,7 @@ export function useVRMFace({
     const tracked = T?.active || false;
 
     const tgt: Record<EK, number> = {
-      aa: 0, ee: 0, ih: 0, oh: 0, ou: 0, blink: 0, angry: 0, happy: 0, sad: 0, relaxed: 0, surprised: 0,
+      aa: 0, ee: 0, ih: 0, oh: 0, ou: 0, blink: 0, angry: 0, happy: 0, sad: 0, relaxed: 0, surprised: 0, cheekPuff: 0
     };
 
     for (const [k, v] of Object.entries(profile.secondary)) tgt[k as EK] = v as number;
@@ -209,7 +209,7 @@ export function useVRMFace({
     }
 
     const ALPHA: Record<EK, number> = {
-      aa: 0.28, ee: 0.20, ih: 0.20, oh: 0.24, ou: 0.18, blink: 0.90, angry: 0.18, happy: 0.14, sad: 0.12, relaxed: 0.10, surprised: 0.15,
+      aa: 0.28, ee: 0.20, ih: 0.20, oh: 0.24, ou: 0.18, blink: 0.90, angry: 0.18, happy: 0.14, sad: 0.12, relaxed: 0.10, surprised: 0.15, cheekPuff: 0.1
     };
     if (profile.alphaOverride) for (const [k, v] of Object.entries(profile.alphaOverride)) ALPHA[k as EK] = v as number;
 
