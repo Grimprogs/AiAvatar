@@ -5,8 +5,8 @@ import type { TrackingData } from './useMediaPipeTracking';
 import type { EmotionMode, BehaviorMode } from './useVRMFace';
 
 const lp = THREE.MathUtils.lerp;
-const R_DOWN = -1.25;
-const L_DOWN = 1.25;
+const R_DOWN = 1.25;
+const L_DOWN = -1.25;
 
 export interface UseVRMPoseArgs {
   vrmRef: React.RefObject<VRM | null>;
