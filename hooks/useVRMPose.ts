@@ -277,10 +277,26 @@ export function useVRMPose({
       // Bring hands to mouth to yawn
       if (rUA) { rUA.rotation.x = lp(rUA.rotation.x, -1.0, 0.08); rUA.rotation.z = lp(rUA.rotation.z, -0.4, 0.08); }
       if (lUA) { lUA.rotation.x = lp(lUA.rotation.x, -1.0, 0.08); lUA.rotation.z = lp(lUA.rotation.z, 0.4, 0.08); }
-      if (rLA) { rLA.rotation.x = lp(rLA.rotation.x, -1.8, 0.1); }
-      if (lLA) { lLA.rotation.x = lp(lLA.rotation.x, -1.8, 0.1); }
-      if (rHd) { rHd.rotation.x = lp(rHd.rotation.x, 0.5, 0.1); }
-      if (lHd) { lHd.rotation.x = lp(lHd.rotation.x, 0.5, 0.1); }
+      if (rLA) {
+        rLA.rotation.x = lp(rLA.rotation.x, -1.65, 0.1);
+        rLA.rotation.y = lp(rLA.rotation.y, 0.14, 0.1);
+        rLA.rotation.z = lp(rLA.rotation.z, -0.04, 0.1);
+      }
+      if (lLA) {
+        lLA.rotation.x = lp(lLA.rotation.x, -1.65, 0.1);
+        lLA.rotation.y = lp(lLA.rotation.y, -0.14, 0.1);
+        lLA.rotation.z = lp(lLA.rotation.z, 0.04, 0.1);
+      }
+      if (rHd) {
+        rHd.rotation.x = lp(rHd.rotation.x, 0.42, 0.1);
+        rHd.rotation.y = lp(rHd.rotation.y, 0.72, 0.1);
+        rHd.rotation.z = lp(rHd.rotation.z, 0.26, 0.1);
+      }
+      if (lHd) {
+        lHd.rotation.x = lp(lHd.rotation.x, 0.42, 0.1);
+        lHd.rotation.y = lp(lHd.rotation.y, -0.72, 0.1);
+        lHd.rotation.z = lp(lHd.rotation.z, -0.26, 0.1);
+      }
     } else if (knockTimer.current > 0) {
       // Screen knocking!
       // Make them raise right hand to knock on the camera glass
@@ -301,11 +317,28 @@ export function useVRMPose({
     } else if ((tracked && T && (T.handToMouth || T.isGiggling)) || behaviorMode === 'shyGiggle') {
       if (rSh) { rSh.rotation.z = lp(rSh.rotation.z, -0.10, 0.10); rSh.rotation.x = lp(rSh.rotation.x, 0.05, 0.10); }
       if (rUA) { rUA.rotation.x = lp(rUA.rotation.x, -1.50, 0.14); rUA.rotation.z = lp(rUA.rotation.z, -0.55, 0.14); }
-      if (rLA) { rLA.rotation.x = lp(rLA.rotation.x, -1.00, 0.12); }
-      if (rHd) { rHd.rotation.x = lp(rHd.rotation.x, -0.20, 0.10); rHd.rotation.z = lp(rHd.rotation.z, 0.15, 0.10); }
+      if (rLA) {
+        rLA.rotation.x = lp(rLA.rotation.x, -0.95, 0.12);
+        rLA.rotation.y = lp(rLA.rotation.y, 0.18, 0.12);
+        rLA.rotation.z = lp(rLA.rotation.z, -0.08, 0.12);
+      }
+      if (rHd) {
+        rHd.rotation.x = lp(rHd.rotation.x, -0.14, 0.10);
+        rHd.rotation.y = lp(rHd.rotation.y, 0.82, 0.10);
+        rHd.rotation.z = lp(rHd.rotation.z, 0.30, 0.10);
+      }
       if (lSh) { lSh.rotation.z = lp(lSh.rotation.z, 0, 0.06); lSh.rotation.x = lp(lSh.rotation.x, 0, 0.06); }
       if (lUA) { lUA.rotation.x = lp(lUA.rotation.x, 0, 0.07); lUA.rotation.z = lp(lUA.rotation.z, 1.25, 0.07); }
-      if (lLA) { lLA.rotation.x = lp(lLA.rotation.x, 0, 0.07); }
+      if (lLA) {
+        lLA.rotation.x = lp(lLA.rotation.x, -0.12, 0.07);
+        lLA.rotation.y = lp(lLA.rotation.y, -0.12, 0.07);
+        lLA.rotation.z = lp(lLA.rotation.z, 0.04, 0.07);
+      }
+      if (lHd) {
+        lHd.rotation.x = lp(lHd.rotation.x, -0.08, 0.08);
+        lHd.rotation.y = lp(lHd.rotation.y, -0.56, 0.08);
+        lHd.rotation.z = lp(lHd.rotation.z, -0.20, 0.08);
+      }
     } else if (behaviorMode === 'guilty') {
       if (rSh) { rSh.rotation.z = lp(rSh.rotation.z, -0.12, 0.04); rSh.rotation.x = lp(rSh.rotation.x, 0.15, 0.04); }
       if (lSh) { lSh.rotation.z = lp(lSh.rotation.z, 0.12, 0.04); lSh.rotation.x = lp(lSh.rotation.x, 0.15, 0.04); }
