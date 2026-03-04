@@ -157,7 +157,12 @@ export function useMediaPipeTracking() {
       streamRef.current = stream;
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
-        await videoRef.current.play();
+        try {
+          await videoRef.current.play();
+        } catch (playErr: any) {
+          if (playErr.name !== 'AbortError') throw playErr;
+          // In React Strict Mode, a double mount can abort the first play()
+        }
       }
       trackingRef.current.active = true;
       setStatus('active');

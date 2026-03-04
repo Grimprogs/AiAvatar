@@ -123,8 +123,9 @@ export function useVRMPose({
       if (gigglingT.current >= 0) gigglingT.current += delta;
 
       // Gesture Timers
-      if (tracked && T && (T.gesture === 'Open_Palm' || T.gesture === 'Victory')) waveTimer.current = 2.5; // Trigger/extend wave
-      if (waveTimer.current > 0) waveTimer.current -= delta;
+      if (tracked && T && (T.gesture === 'Open_Palm' || T.gesture === 'Victory')) {
+        waveTimer.current = Math.max(waveTimer.current, 2.5); // Ensure it doesn't instantly shrink
+      }
 
       if (!isSpeaking && !headReact && waveTimer.current <= 0 && behaviorMode === 'neutral') {
         if (Math.random() < 0.003) foldedHandsTimer.current = 2.0 + Math.random() * 4.0;
@@ -227,21 +228,28 @@ export function useVRMPose({
     }
 
     // Calculate timers
+    if (waveTimer.current > 0) waveTimer.current -= delta;
     if (yawnTimer.current > 0) yawnTimer.current -= delta;
     if (knockTimer.current > 0) knockTimer.current -= delta;
 
     if (waveTimer.current > 0) {
-      if (head) { head.rotation.z = lp(head.rotation.z, -0.25, 0.1); } // Tilt head left
+      if (head) { head.rotation.z = lp(head.rotation.z, -0.15, 0.1); } // Tilt head slightly left
       const wPhase = now * Math.PI * 6; // slightly faster continuous wave speed
-      if (rSh) { rSh.rotation.z = lp(rSh.rotation.z, 0.5, 0.15); rSh.rotation.x = lp(rSh.rotation.x, -0.3, 0.15); }
+
+      // Push shoulder more forward
+      if (rSh) { rSh.rotation.z = lp(rSh.rotation.z, 0.2, 0.15); rSh.rotation.x = lp(rSh.rotation.x, -0.4, 0.15); }
       if (lSh) { lSh.rotation.z = lp(lSh.rotation.z, 0.1, 0.1); lSh.rotation.x = lp(lSh.rotation.x, 0.1, 0.1); }
-      // High raised hand for waving
-      if (rUA) { rUA.rotation.x = lp(rUA.rotation.x, -0.5, 0.2); rUA.rotation.y = lp(rUA.rotation.y, -0.2, 0.2); rUA.rotation.z = lp(rUA.rotation.z, -2.1, 0.2); }
+
+      // Point upper arm forward (-x) and out/up (-z)
+      if (rUA) { rUA.rotation.x = lp(rUA.rotation.x, -1.5, 0.2); rUA.rotation.y = lp(rUA.rotation.y, -0.4, 0.2); rUA.rotation.z = lp(rUA.rotation.z, -1.2, 0.2); }
       if (lUA) { lUA.rotation.x = lp(lUA.rotation.x, 0, 0.1); lUA.rotation.y = lp(lUA.rotation.y, 0, 0.1); lUA.rotation.z = lp(lUA.rotation.z, L_DOWN, 0.1); }
-      // Waving forearm
-      if (rLA) { rLA.rotation.x = lp(rLA.rotation.x, -0.8, 0.2); rLA.rotation.z = lp(rLA.rotation.z, Math.sin(wPhase) * 0.8 - 0.2, 0.25); }
+
+      // Bend forearm up towards face
+      if (rLA) { rLA.rotation.x = lp(rLA.rotation.x, -1.2, 0.2); rLA.rotation.z = lp(rLA.rotation.z, Math.sin(wPhase) * 0.8 + 0.2, 0.25); }
       if (lLA) { lLA.rotation.x = lp(lLA.rotation.x, 0, 0.1); }
-      if (rHd) { rHd.rotation.x = lp(rHd.rotation.x, -0.1, 0.2); rHd.rotation.z = lp(rHd.rotation.z, Math.sin(wPhase + 1.5) * 0.5, 0.25); }
+
+      // Hand angle
+      if (rHd) { rHd.rotation.x = lp(rHd.rotation.x, -0.3, 0.2); rHd.rotation.z = lp(rHd.rotation.z, Math.sin(wPhase + 1.5) * 0.5, 0.25); }
     } else if (yawnTimer.current > 0) {
       if (rSh) { rSh.rotation.z = lp(rSh.rotation.z, -0.1, 0.1); rSh.rotation.x = lp(rSh.rotation.x, 0.2, 0.1); }
       if (lSh) { lSh.rotation.z = lp(lSh.rotation.z, 0.1, 0.1); lSh.rotation.x = lp(lSh.rotation.x, 0.2, 0.1); }

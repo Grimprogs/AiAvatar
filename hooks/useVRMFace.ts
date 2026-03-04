@@ -208,6 +208,13 @@ export function useVRMFace({
       }
     }
 
+    // Force a cute smile and slightly closed eyes if user is waving
+    if (tracked && T && (T.gesture === 'Open_Palm' || T.gesture === 'Victory')) {
+      tgt.happy = Math.max(tgt.happy, 0.85); // Big smile
+      tgt.blink = Math.max(tgt.blink, 0.35); // Squint cute eyes
+      tgt.relaxed = Math.max(tgt.relaxed, 0.5); // Relax brow
+    }
+
     const ALPHA: Record<EK, number> = {
       aa: 0.28, ee: 0.20, ih: 0.20, oh: 0.24, ou: 0.18, blink: 0.90, angry: 0.18, happy: 0.14, sad: 0.12, relaxed: 0.10, surprised: 0.15, cheekPuff: 0.1
     };
